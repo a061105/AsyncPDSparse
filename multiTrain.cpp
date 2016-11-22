@@ -109,8 +109,16 @@ int main(int argc, char** argv){
 	cerr << "D=" << D << endl; 
 	cerr << "K=" << K << endl;
 	
-	PDSparse* solver = new PDSparse(param);
-	solver->solve();
+	if( param->solver == 1 ){
+
+		PDSparse* solver = new PDSparse(param);
+		solver->solve();
+
+	}else if( param->solver == 2 ){
+
+		AsyncPDSparse* solver = new AsyncPDSparse(param);
+		solver->solve();
+	}
 	//model->writeModel(param->modelFname);
 	
 	overall_time += omp_get_wtime();
