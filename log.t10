@@ -1,0 +1,42 @@
+heldout N=5000
+N=378408
+d=174.485
+D=833484
+K=11947
+lambda=0.1, C=1, max_iter=30
+i=0	nnz_a_i=1.97063	nnz_w_j=1.62197	search=33.9641	subsolve=4.09374	maintain=17.3236	dual_obj=-171123	heldout Acc=0.3758 
+i=1	nnz_a_i=2.80367	nnz_w_j=2.43462	search=66.4855	subsolve=6.96112	maintain=21.1885	dual_obj=-207105	heldout Acc=0.3876 
+i=2	nnz_a_i=4.13407	nnz_w_j=2.88654	search=79.6264	subsolve=9.96924	maintain=29.0955	dual_obj=-222651	heldout Acc=0.3942 
+i=3	nnz_a_i=5.70357	nnz_w_j=3.1355	search=88.2937	subsolve=14.457	maintain=36.4528	dual_obj=-228358	heldout Acc=0.394 
+i=4	nnz_a_i=6.24079	nnz_w_j=3.29847	search=95.822	subsolve=17.3315	maintain=43.9256	dual_obj=-230643	heldout Acc=0.3974 
+i=5	nnz_a_i=6.31024	nnz_w_j=3.42658	search=83.7677	subsolve=15.9309	maintain=33.2988	dual_obj=-231810	heldout Acc=0.3962 
+i=6	nnz_a_i=6.20455	nnz_w_j=3.52559	search=86.2153	subsolve=16.142	maintain=34.6245	dual_obj=-232525	heldout Acc=0.3986 
+i=7	nnz_a_i=6.06813	nnz_w_j=3.60656	search=86.6092	subsolve=16.0112	maintain=34.7978	dual_obj=-232974	heldout Acc=0.3988 
+i=8	nnz_a_i=5.94566	nnz_w_j=3.67548	search=87.0163	subsolve=15.6718	maintain=31.952	dual_obj=-233298	heldout Acc=0.3986 
+i=9	nnz_a_i=5.83806	nnz_w_j=3.72812	search=92.2504	subsolve=16.366	maintain=34.5157	dual_obj=-233536	heldout Acc=0.3994 
+i=10	nnz_a_i=5.74581	nnz_w_j=3.77341	search=90.005	subsolve=15.9005	maintain=35.264	dual_obj=-233719	heldout Acc=0.3986 
+i=11	nnz_a_i=5.6668	nnz_w_j=3.81477	search=86.7584	subsolve=15.3898	maintain=28.8673	dual_obj=-233850	heldout Acc=0.3994 
+i=12	nnz_a_i=5.59839	nnz_w_j=3.84883	search=87.9944	subsolve=15.4346	maintain=31.098	dual_obj=-233957	heldout Acc=0.3988 
+i=13	nnz_a_i=5.53654	nnz_w_j=3.87755	search=91.715	subsolve=16.0189	maintain=33.6238	dual_obj=-234039	heldout Acc=0.3986 
+i=14	nnz_a_i=5.48297	nnz_w_j=3.90337	search=92.1	subsolve=16.0818	maintain=33.3591	dual_obj=-234109	heldout Acc=0.399 
+i=15	nnz_a_i=5.43327	nnz_w_j=3.92352	search=87.8445	subsolve=15.3531	maintain=30.0128	dual_obj=-234162	heldout Acc=0.399 
+i=16	nnz_a_i=5.38999	nnz_w_j=3.94262	search=88.5824	subsolve=15.331	maintain=30.9735	dual_obj=-234212	heldout Acc=0.3978 
+i=17	nnz_a_i=5.35006	nnz_w_j=3.96004	search=88.4053	subsolve=15.2671	maintain=30.9657	dual_obj=-234248	heldout Acc=0.398 
+i=18	nnz_a_i=5.31418	nnz_w_j=3.97803	search=88.3775	subsolve=15.1271	maintain=29.5257	dual_obj=-234286	heldout Acc=0.398 
+i=19	nnz_a_i=5.28125	nnz_w_j=3.99347	search=88.8559	subsolve=15.185	maintain=27.9502	dual_obj=-234314	heldout Acc=0.3982 
+i=20	nnz_a_i=5.27281	nnz_w_j=4.00716	search=99.0754	subsolve=20.5054	maintain=34.76	dual_obj=-234333	heldout Acc=0.3996 
+i=21	nnz_a_i=5.25492	nnz_w_j=4.01957	search=93.89	subsolve=19.3894	maintain=32.1405	dual_obj=-234356	heldout Acc=0.3994 
+i=22	nnz_a_i=5.23419	nnz_w_j=4.03118	search=91.4042	subsolve=19.1517	maintain=29.5213	dual_obj=-234377	heldout Acc=0.3996 
+i=23	nnz_a_i=5.21413	nnz_w_j=4.04196	search=91.4284	subsolve=19.0259	maintain=28.6469	dual_obj=-234389	heldout Acc=0.4 
+i=24	nnz_a_i=5.19475	nnz_w_j=4.05237	search=92.0093	subsolve=19.1682	maintain=29.3641	dual_obj=-234406	heldout Acc=0.399 
+i=25	nnz_a_i=5.1766	nnz_w_j=4.06198	search=98.2505	subsolve=20.1972	maintain=33.459	dual_obj=-234420	heldout Acc=0.3994 
+i=26	nnz_a_i=5.15959	nnz_w_j=4.06989	search=94.8312	subsolve=19.7796	maintain=32.1774	dual_obj=-234435	heldout Acc=0.3992 
+i=27	nnz_a_i=5.14271	nnz_w_j=4.07771	search=92.4391	subsolve=19.0366	maintain=31.6765	dual_obj=-234446	heldout Acc=0.3998 
+i=28	nnz_a_i=5.12618	nnz_w_j=4.08501	search=93.0073	subsolve=19.1673	maintain=30.8749	dual_obj=-234459	heldout Acc=0.3998 
+i=29	nnz_a_i=5.11123	nnz_w_j=4.09335	search=90.8185	subsolve=18.8398	maintain=28.0318	dual_obj=-234470	heldout Acc=0.3996 
+
+train time=4054.19
+search time=2627.84
+subsolve time=482.284
+maintain time=939.467
+overall_time=4054.19

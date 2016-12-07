@@ -257,7 +257,8 @@ class AsyncPDSparse{
 			last_subsolve_time = subsolve_time;
 
 			overall_time += omp_get_wtime();
-			cerr << "dual_obj=" << dual_obj() << "\t";
+			Float d_obj = dual_obj();
+			cerr << "dual_obj=" << d_obj << "\t";
 			if( heldoutEval != NULL){
 				Float heldout_test_acc = heldoutEval->calcAcc(w);
 				cerr << "heldout Acc=" << heldout_test_acc << " ";
@@ -265,10 +266,13 @@ class AsyncPDSparse{
 			overall_time -= omp_get_wtime();
 			
 			cerr << endl;
+			
+			cout << iter << " " << d_obj << endl;
+			
 			iter++;
 		}
 		cerr << endl;
-
+		
 	
 		//computing heldout accuracy 	
 		cerr << "train time=" << overall_time + omp_get_wtime() << endl;

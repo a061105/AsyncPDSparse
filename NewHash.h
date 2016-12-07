@@ -58,16 +58,10 @@ class NewHash{
 	void set(int index, pair<int,Float>* p, Float value){
 		
 		int prev_index = p->first;
+		p->first = index;
 		p->second = value;
 		
-		if( value==0.0 ){
-			p->first = -1;
-			if( prev_index!=-1 ) list_size--;
-		}else{
-			p->first = index;
-		}
-		
-		if( prev_index == -1 && p->first != -1 ){
+		if( prev_index == -1 ){
 			list_size+=1;
 			pair<int,Float>* list2 = list;
 			int list_cap2 = list_cap;
@@ -143,7 +137,7 @@ class NewHash{
 	}
 	
 
-	inline void resize(pair<int, Float>*& l, pair<int, Float>*& L, int& size, int& new_size, int& new_size0, const int& util, int*& hashindices){
+	inline void resize(pair<int, Float>*& l, pair<int, Float>*& L, int& size, int& new_size, int& new_size0, int& util, int*& hashindices){
 		while (util > UPPER_UTIL_RATE * new_size){
 	                new_size *= 2;
 	        }
@@ -155,18 +149,21 @@ class NewHash{
 	        for (int tt = 0; tt < new_size; tt++){
 	                new_l[tt] = make_pair(-1, 0.0);
 	        }
-	        for (int tt = 0; tt < size; tt++){
+	 	int new_util=0;
+	 	for (int tt = 0; tt < size; tt++){
 	                //insert old elements into new array
 	                pair<int, Float> p = l[tt];
 	                if (p.first != -1 && p.second != 0.0){
 				find_index(new_l, index_l, p.first, new_size0, hashindices);
 	                        new_l[index_l] = p;
+				new_util++;
 	                }
 	        }
 	        delete[] l;
 	        l = new_l;
 	        size = new_size;
 	        L = new_l;
+		util = new_util;
 	}
 
 	inline void trim(pair<int, Float>*& l, int& size, int& util, int*& hashindices){
