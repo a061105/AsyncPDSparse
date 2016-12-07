@@ -119,6 +119,13 @@ class NewHash{
 		return it;
 	}
 	
+	//for debug
+	void printList(){
+		for(int i=0;i<list_cap;i++)
+			cerr << "(" << list[i].first << "," << list[i].second << "),";
+		cerr << endl;
+	}
+	
 	private:
 	
 	HashFunc* hashfunc;
