@@ -71,6 +71,16 @@ class NewHash{
 			}
 		}
 	}
+	
+	void clear(){
+
+		for(int i=0;i<list_cap;i++){
+			list[i].first = -1;
+			list[i].second = 0.0;
+		}
+		list_size=0;
+	}
+
 
 	class iterator{
 		public:
