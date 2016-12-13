@@ -55,11 +55,10 @@ class AsyncPDSparse{
 		//initialize active set out of [K] for each sample i
 		alpha_blocks = new vector<pair<int,Float> >*[Tau];
 		for(int t=0;t<Tau;t++){
-			alpha_blocks[t] = new vector<pair<int, Float> >[N];
-			int i=0;
-			for(vector<Labels>::iterator it=labels_blocks[t].begin();
-					it!=labels_blocks[t].end(); it++, i++){
-				Labels* yi = &(*it);
+			int N_t = labels_blocks[t].size();
+			alpha_blocks[t] = new vector<pair<int, Float> >[N_t];
+			for(int i=0;i<N_t;i++){
+				Labels* yi = &(labels_blocks[t][i]);
 				for (Labels::iterator it2 = yi->begin(); it2 < yi->end(); it2++){
 					//positive labels are always active
 					alpha_blocks[t][i].push_back(make_pair(*it2, 0.0));
