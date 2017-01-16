@@ -25,6 +25,7 @@ typedef double Float;
 const int LINE_LEN = 100000000;
 const int FNAME_LEN = 1000;
 const int INF = INT_MAX;
+const int RESERVE_SIZE = 1000;
 
 #define EPS 1e-12
 #define INFI 1e10
@@ -53,6 +54,9 @@ class PermutationHash{
 			hashindices[i] = i;
 		}
 		random_shuffle(hashindices, hashindices+K);
+	}
+	int get(int i){
+		return hashindices[i];
 	}
 	~PermutationHash(){
 		delete [] hashindices;
@@ -142,6 +146,28 @@ long nnz( vector<SparseVec*>& data ){
 		sum += data[i]->size();
 	}
 	return sum;
+}
+
+void index_transpose(vector<vector<int> >& A, int N, int K, vector<vector<int> >& B){
+	
+	B.resize(K);
+	for(int k=0;k<K;k++)
+		B[k].clear();
+
+	for(int i=0;i<N;i++)
+		for(vector<int>::iterator it=A[i].begin(); it!=A[i].end(); it++)
+			B[*it].push_back(i);
+}
+
+void transpose(vector<SparseVec*>& A, int N, int D, vector<SparseVec>& B){
+	
+	B.resize(D);
+	for(int j=0;j<D;j++)
+		B[j].clear();
+	for(int i=0;i<N;i++){
+		for(SparseVec::iterator it=A[i]->begin(); it!=A[i]->end(); it++)
+			B[it->first].push_back(make_pair(i,it->second));
+	}
 }
 
 // maintain top tK indices, stored in max_indices, where indices are sorted by x[].

@@ -114,6 +114,10 @@ class Param{
 	int early_terminate;
 	bool dump_model;
 	
+	/** For AsyncPDSparse
+	 */
+	Float step_size_shrink;
+	
 	Param(){
 		solver = 1;
 		lambda = 0.1;
@@ -127,6 +131,7 @@ class Param{
 		heldoutFname == NULL;
 		train = NULL;
 		dump_model = false;
+		step_size_shrink = 0.1;
 	}
 
 	~Param(){
@@ -136,31 +141,30 @@ class Param{
 	}
 };
 
-//only used for training
-/*class Model{
+
+//only used for prediction
+class StaticModel{
+
 	public:
-	Model(){
+	StaticModel(){
 		label_name_list = new vector<string>();
 		label_index_map = new map<string,int>();
 	}
-
-	Model(Problem* prob, vector<int>* _w_hash_nnz_index, pair<int, Float>** _w, int* _size_w, int* _hashindices){
-		D = prob->D;
-		K = prob->K;
-		label_name_list = &(prob->label_name_list);
-		label_index_map = &(prob->label_index_map);
-		w_hash_nnz_index = _w_hash_nnz_index;	
-		w = _w;
-		size_w = _size_w;
-                hashindices = _hashindices;
+	StaticModel(Param* param){
+		label_index_map = &(param->train->label_index_map);
+		label_name_list = &(param->train->label_name_list);
+		D = param->train->D;
+		K = param->train->K;
+		w = new SparseVec[D];
 	}
-	pair<int, Float>** w;
-	int* size_w;
-	int* hashindices;
+	SparseVec* w;
+	int D;
+	int K;
+	vector<string>* label_name_list;
+	map<string,int>* label_index_map;
 	
-	//write model to file
 	void writeModel( char* fname){
-
+		
 		ofstream fout(fname);
 		fout << "nr_class " << K << endl;
 		fout << "label ";
@@ -171,45 +175,15 @@ class Param{
 		fout << endl;
 		fout << "nr_feature " << D << endl;
 		for(int j=0;j<D;j++){
-			vector<int>* nnz_index_j = &(w_hash_nnz_index[j]);
-			fout << nnz_index_j->size() << " ";
 			
-			pair<int, Float>* wj = w[j];
-			int size_wj = size_w[j];
-			int size_wj0 = size_wj-1;
-			for (vector<int>::iterator it = nnz_index_j->begin(); it != nnz_index_j->end(); it++){
-				int k = *it;
-				int index_w = 0;
-				find_index(wj, index_w, k, size_wj0, hashindices);
-				fout << k << ":" << wj[index_w].second << " ";
+			SparseVec& wj = w[j];
+			for(SparseVec::iterator it=wj.begin(); it!=wj.end(); it++){
+				fout << it->first << ":" << it->second << " ";
 			}
 			fout << endl;
 		}
 		fout.close();
-		
 	}
-
-	HashVec** Hw;
-	vector<int>* w_hash_nnz_index;	
-	int D;
-	int K;
-	vector<string>* label_name_list;
-	map<string,int>* label_index_map;
-};*/
-
-//only used for prediction
-class StaticModel{
-
-	public:
-	StaticModel(){
-		label_name_list = new vector<string>();
-		label_index_map = new map<string,int>();
-	}
-	SparseVec* w;
-	int D;
-	int K;
-	vector<string>* label_name_list;
-	map<string,int>* label_index_map;
 };
 
 void readData(char* fname, Problem* prob)
@@ -220,6 +194,7 @@ void readData(char* fname, Problem* prob)
 	ifstream fin(fname);
 	char* line = new char[LINE_LEN];
 	int d = -1;
+	int line_count = 1;
 	while( !fin.eof() ){
 		
 		fin.getline(line, LINE_LEN);
@@ -265,6 +240,9 @@ void readData(char* fname, Problem* prob)
 		}
 		
 		SparseVec* ins = new SparseVec();
+		//adding Bias
+		ins->push_back(make_pair(0,1.0));
+		/////////////
 		for(int i=st;i<tokens.size();i++){
 			vector<string> kv = split(tokens[i],":");
 			int ind = atoi(kv[0].c_str());
@@ -272,24 +250,46 @@ void readData(char* fname, Problem* prob)
 			ins->push_back(make_pair(ind,val));
 			if( ind > d )
 				d = ind;
+			if( ind < 1 ){
+				cerr << "minimum feature index should be 1 (" << line_count << " line)" << endl;
+				exit(0);
+			}
 		}
 		
 		prob->data.push_back(ins);
 		prob->labels.push_back(lab_indices);
+		
+		line_count++;
 	}
 	fin.close();
 	
+	/* Adding Bias
+	*/
 	if (prob->D < d+1){
-		prob->D = d+1; //adding bias
+		prob->D = d+1;
 	}
+
 	prob->N = prob->data.size();
 	prob->K = label_index_map->size();
 	label_name_list->resize(prob->K);
-	for(map<string,int>::iterator it=label_index_map->begin();
+	/*for(map<string,int>::iterator it=label_index_map->begin();
 			it!=label_index_map->end();
 			it++)
-		(*label_name_list)[it->second] = it->first;
+		(*label_name_list)[it->second] = it->first;*/
 	
+	//random rehash labels
+	HashFunc* hashfun = new HashFunc(prob->K);
+	for(map<string,int>::iterator it=label_index_map->begin(); 
+		it!=label_index_map->end(); it++){
+		it->second = hashfun->get(it->second);
+		(*label_name_list)[it->second] = it->first;
+	}
+	for(int i=0;i<prob->labels.size();i++){
+		for(int j=0;j<prob->labels[i].size();j++)
+			prob->labels[i][j] = hashfun->get(prob->labels[i][j]);
+	}
+	
+	delete hashfun;
 	delete[] line;
 }
 
