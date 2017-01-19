@@ -15,6 +15,7 @@ class AsyncPDSparse{
 		heldoutEval = param->heldoutEval;	
 		early_terminate = param->early_terminate;
 		lambda = param->lambda;
+		step_size_shrink = param->step_size_shrink;
 		C = param->C;
 		N = train->N;
 		D = train->D;
@@ -100,8 +101,8 @@ class AsyncPDSparse{
 		delete[] prod_cache;
 		delete[] prod_is_tocheck;
 	}
-
-	void solve(){
+	
+	StaticModel* solve(){
 		
 		//initialize Q_diag (Q=X*X') for the diagonal Hessian of each i-th subproblem
 		Q_diag = new Float*[Tau];
@@ -113,7 +114,7 @@ class AsyncPDSparse{
 				Float sq_sum = 0.0;
 				for(SparseVec::iterator it=ins->begin(); it!=ins->end(); it++)
 					sq_sum += it->second*it->second;
-				Q_diag[t][i] = sq_sum;
+				Q_diag[t][i] = sq_sum / step_size_shrink;
 			}
 		}
 		//indexes for permutation of [N]
@@ -287,6 +288,8 @@ class AsyncPDSparse{
 		delete[] alpha_i_new;
 		delete[] Q_diag;
 		delete[] index;
+
+		return new StaticModel();
 	}
 	
 	//compute 1/2 \|w\|_2^2 + \sum_{i,k: k \not \in y_i} alpha_{i, k}
@@ -467,6 +470,7 @@ class AsyncPDSparse{
 	HeldoutEval* heldoutEval;
 	Float lambda;
 	Float C;
+	Float step_size_shrink;
 	vector< vector<SparseVec*> > data_blocks;
 	vector< vector<Labels> > labels_blocks;
 	int D; 

@@ -177,6 +177,7 @@ class StaticModel{
 		for(int j=0;j<D;j++){
 			
 			SparseVec& wj = w[j];
+			fout << wj.size() << " ";
 			for(SparseVec::iterator it=wj.begin(); it!=wj.end(); it++){
 				fout << it->first << ":" << it->second << " ";
 			}
@@ -288,8 +289,8 @@ void readData(char* fname, Problem* prob)
 		for(int j=0;j<prob->labels[i].size();j++)
 			prob->labels[i][j] = hashfun->get(prob->labels[i][j]);
 	}
-	
 	delete hashfun;
+
 	delete[] line;
 }
 

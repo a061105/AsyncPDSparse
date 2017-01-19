@@ -88,8 +88,9 @@ vector<string> split(string str, string pattern){
 double inner_prod(double* w, SparseVec* sv){
 
 	double sum = 0.0;
-	for(SparseVec::iterator it=sv->begin(); it!=sv->end(); it++)
+	for(SparseVec::iterator it=sv->begin(); it!=sv->end(); it++){
 		sum += w[it->first]*it->second;
+	}
 	return sum;
 }
 

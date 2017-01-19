@@ -2,6 +2,7 @@
 #include "multi.h"
 #include "PDSparse.h"
 #include "AsyncPDSparse.h"
+#include "ParallelPDSparse.h"
 
 double overall_time = 0.0;
 
@@ -11,6 +12,7 @@ void exit_with_help(){
 	cerr << "-s solver: (default 1)" << endl;
 	cerr << "	1 -- PDSparse" << endl;
 	cerr << "	2 -- Asynchronized PDSparse (degree tau)" << endl;
+	cerr << "	3 -- Parallel PDSparse" << endl;
 	cerr << "-l lambda: L1 regularization weight (default 0.1)" << endl;
 	cerr << "-c cost: cost of each sample (default 1.0)" << endl;
 	cerr << "-t tau: degree of asynchronization (default 10)" << endl;
@@ -21,6 +23,7 @@ void exit_with_help(){
 	cerr << "-g max_select: maximum number of dual variables selected during search (default: -1 (i.e. dynamically adjusted during iterations) )" << endl;
 	//cerr << "-p post_train_iter: #iter of post-training without L1R (default auto)" << endl;
 	cerr << "-h <file>: using accuracy on heldout file '<file>' to terminate iterations" << endl;
+	cerr << "-k shrink_ratio: shrink update by this ratio in solver 2 (default 1.0)." << endl;
 	//cerr << "-e early_terminate: how many iterations of non-increasing heldout accuracy required to earyly stop (default 3)" << endl;
 	//cerr << "-d : dump model file when better heldout accuracy is achieved, model files will have name (model).<iter>" << endl;
 	exit(0);
@@ -61,6 +64,8 @@ void parse_cmd_line(int argc, char** argv, Param* param){
 			//	  break;
 			case 'h': param->heldoutFname = argv[i];
 				  break;
+			case 'k': param->step_size_shrink = atof(argv[i]);
+				  break;
 			//case 'd': param->dump_model = true; --i;
 			//	  break;
 			default:
@@ -96,6 +101,7 @@ int main(int argc, char** argv){
 	overall_time -= omp_get_wtime();
 
 	if (param->heldoutFname != NULL){
+		
 		Problem* heldout = new Problem();
 		readData( param->heldoutFname, heldout);
 		cerr << "heldout N=" << heldout->data.size() << endl;
@@ -109,17 +115,23 @@ int main(int argc, char** argv){
 	cerr << "D=" << D << endl; 
 	cerr << "K=" << K << endl;
 	
+	StaticModel* model;
 	if( param->solver == 1 ){
 
 		PDSparse* solver = new PDSparse(param);
-		solver->solve();
+		model = solver->solve();
 
 	}else if( param->solver == 2 ){
 
 		AsyncPDSparse* solver = new AsyncPDSparse(param);
-		solver->solve();
+		model = solver->solve();
+
+	}else if( param->solver == 3 ){
+
+		ParallelPDSparse* solver = new ParallelPDSparse(param);
+		model = solver->solve();
 	}
-	//model->writeModel(param->modelFname);
+	model->writeModel(param->modelFname);
 	
 	overall_time += omp_get_wtime();
 	cerr << "overall_time=" << overall_time << endl;

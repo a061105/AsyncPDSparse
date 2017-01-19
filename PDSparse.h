@@ -78,7 +78,7 @@ class PDSparse{
 		delete[] alpha;
 	}
 
-	void solve(){
+	StaticModel* solve(){
 		
 		//initialize Q_diag (Q=X*X') for the diagonal Hessian of each i-th subproblem
 		Q_diag = new Float[N];
@@ -224,6 +224,8 @@ class PDSparse{
 		delete[] alpha_i_new;
 		delete[] Q_diag;
 		delete[] index;
+
+		return new StaticModel();
 	}
 	
 	//compute 1/2 \|w\|_2^2 + \sum_{i,k: k \not \in y_i} alpha_{i, k}
