@@ -21,7 +21,6 @@ class ParallelPDSparse{
 		K = train->K;
 		data = (train->data);
 		labels = (train->labels);
-		model = new StaticModel(param);
 		
 		
 		index_transpose(labels, N, K, pos_samples);
@@ -59,18 +58,19 @@ class ParallelPDSparse{
 		}
 	}
 	
-	~ParallelPDSparse(){
+	/*~ParallelPDSparse(){
 		delete[] v;
 		
 		delete w;
 		delete[] alpha;
 		delete[] prod_arr;
-	}
+	}*/
 	
 	StaticModel* solve(){
 		
+		StaticModel* model = new StaticModel(train);
 		for(int k=0;k<K;k++){
-			cerr << "class " << k <<" " <<"(|pos|="<<pos_samples[k].size()<<"):";
+			//cerr << "class " << k <<" " <<"(|pos|="<<pos_samples[k].size()<<"):";
 			
 			for(vector<int>::iterator it=pos_samples[k].begin(); 
 				it!=pos_samples[k].end(); it++)
@@ -85,9 +85,6 @@ class ParallelPDSparse{
 			
 			for(SparseVec::iterator it=w_k.begin(); it!=w_k.end(); it++)
 				model->w[it->first].push_back( make_pair(k,it->second) );
-
-			if( k % (K/100) == 0 )
-				cerr << ".";
 		}
 		cerr << endl;
 		
@@ -116,7 +113,7 @@ class ParallelPDSparse{
 		Float tol = 0.1;
 		int max_iter = 1000;
 		int max_inner = 10;
-		int max_select = 5*pos_samples.size();
+		int max_select = pos_samples.size();
 		int iter=0;
 		while(iter<max_iter){
 			
@@ -143,16 +140,11 @@ class ParallelPDSparse{
 					Float diff_abs = fabs(yi_diff);
 					if( diff_abs > 1e-6 ){
 
-						//residual = max(residual, diff_abs*XXt_diag[i]);
+						residual = max(residual, diff_abs*XXt_diag[i]);
 						//residual = max(residual, diff_abs);
-
+						
 						alpha[i] = alpha_i_new;
 						
-						//bias
-						/*Float val = xi->at(0).second;
-						v[0] += yi_diff*val;
-						w[0] = v[0];
-						w_nz->set(0, val);*/
 						//other feature
 						for(SparseVec::iterator it=xi->begin(); 
 								it!=xi->end(); it++){
@@ -168,6 +160,7 @@ class ParallelPDSparse{
 							Float wj_new;
 						        if( j!=0 ) wj_new = prox_l1( v[j], lambda );
 							else       wj_new = v[j];
+							
 							if( wj_new != 0.0 || w[j] != 0.0 )
 								w_nz->set( j, wj_new );
 							w[j] = wj_new;
@@ -212,7 +205,6 @@ class ParallelPDSparse{
 				}
 			}
 			prod_time += omp_get_wtime();
-
 			////find max
 			list<pair<int,Float> > cand;
 			for(int k=0;k<max_select;k++)
@@ -240,7 +232,6 @@ class ParallelPDSparse{
 					}
 				}
 			
-			
 			////clear prod_arr
 			for(vector<int>::iterator it=prod_change_ind.begin();
 				it!=prod_change_ind.end(); it++)
@@ -248,7 +239,6 @@ class ParallelPDSparse{
 			prod_change_ind.clear();
 			
 			search_time += omp_get_wtime();
-			
 			//adjust select size
 			//if( 2*max_select < act_index.size() )
 			//	max_select = min( 2*max_select, 10000 );
@@ -257,19 +247,21 @@ class ParallelPDSparse{
 			if( residual < tol )
 				break;
 			
-			if( iter%10==0 )
-				cerr << ".";
+			//if( iter%10==0 )
+			//	cerr << ".";
 			
 			overall_search_time += search_time;
 			overall_sub_time += sub_time;
 			iter++;
 		}
 		
+		cerr << setprecision(3) ;
 		cerr << "#iter=" << iter << ", w_nnz=" << w_nz->size() << ", a_nnz=" << act_index.size()
 			<< ", search_time=" << overall_search_time 
 			<< ", prod_time=" << prod_time 
 			<< ", sub_time=" << overall_sub_time 
 			<< endl;
+		
 		/*cerr << "pos:" << endl;
 		double pos_sum = 0.0;
 		for(vector<int>::iterator it=act_index.begin(); it!=act_index.end(); it++)
@@ -330,7 +322,6 @@ class ParallelPDSparse{
 	vector< SparseVec* > data;
 	vector< SparseVec > data_inv;
 	vector< Labels > labels;
-	vector<vector<int> > pos_samples;
 	int D;
 	int N;
 	int K;
@@ -341,6 +332,8 @@ class ParallelPDSparse{
 	
 	public:
 	
+	vector<vector<int> > pos_samples;
+	
 	//dense representation of alpha
 	Float* alpha;
 	Float* y; //N*1
@@ -349,6 +342,4 @@ class ParallelPDSparse{
 	NewHash* w_nz;
 	//v=X'alpha
 	Float* v;
-
-	StaticModel* model;
 };

@@ -80,55 +80,65 @@ void parse_cmd_line(int argc, char** argv, Param* param){
 }
 
 void compute_label_partition(vector<Labels>& labels, int N, int K, int mpi_rank, int mpi_num_proc,
-			vector<int>& label_partition){
+			vector<vector<int> >& label_partition){
 	
 	//compute label frequency
-	int* label_freq = new int[K];
+	double* label_freq = new double[K];
 	for(int k=0;k<K;k++)
-		label_freq[k] = 0;
+		label_freq[k] = 0.0;
 	for(int i=0;i<N;i++)
 		for(Labels::iterator it=labels[i].begin(); it!=labels[i].end(); it++)
-			label_freq[*it]++;
+			label_freq[*it]+=1.0;
 	
-	int freq_sum = 0;
-	for(int k=0;k<K;k++)
-		freq_sum += label_freq[k];
-	
-	//create a random permutation of label index
+	//sort label index according to frequency
 	vector<int> label_index;
 	label_index.resize(K);
 	for(int k=0;k<K;k++)
 		label_index[k] = k;
-	//random_shuffle(label_index.begin(), label_index.end());
-
+	sort(label_index.begin(), label_index.end(), ScoreComp(label_freq));
+	
 	//compute label partition
-	int freq_per_proc = freq_sum/mpi_num_proc;
-	int cumul = 0;
-	int rank = 0;
-	int r;
-	for(r=0; r<label_index.size();r++){
+	Float* proc_sizes = new Float[mpi_num_proc];
+	for(int i=0;i<mpi_num_proc;i++)
+		proc_sizes[i] = 0.0;
+	
+	PQueue* pq = new PQueue(ScoreComp(proc_sizes));
+	for(int i=0;i<mpi_num_proc;i++)
+		pq->push(i);
+	
+	label_partition.resize(mpi_num_proc);
+	for(int i=0;i<mpi_num_proc;i++)
+		label_partition[i].clear();
+	
+	for(int i=0;i<K;i++){
+		int k = label_index[i];
 
-		int k = label_index[r];
-		cumul += label_freq[k];
+		int proc = pq->top();
+		pq->pop();
+		label_partition[proc].push_back(k);
 		
-		if( rank == mpi_rank )
-			label_partition.push_back(k);
-
-		if( cumul > freq_per_proc ){
-			cumul = 0;
-			rank++;
-		}
+		double freq = label_freq[k];
+		proc_sizes[proc] += freq;
+		pq->push(proc);
+	}
+	
+	//random permuttion
+	for(int i=0;i<mpi_num_proc;i++){
+		random_shuffle(label_partition[i].begin(), label_partition[i].end());
 	}
 
 	delete[] label_freq;
+	delete[] proc_sizes;
+	delete pq;
 }
+
+const int ROOT = 0;
 
 int main(int argc, char** argv){
 	
 	MPI::Init(argc,argv);
 	int mpi_rank = MPI::COMM_WORLD.Get_rank();
 	int mpi_num_proc = MPI::COMM_WORLD.Get_size();
-	
 	Param* param = new Param();
 	parse_cmd_line(argc, argv, param);
 	
@@ -146,14 +156,16 @@ int main(int argc, char** argv){
 		cerr << "K=" << K << endl;
 	}
 	
-	vector<int> my_label_partition;
-	compute_label_partition(train->labels, N, K, mpi_rank, mpi_num_proc, my_label_partition);
-	cerr << "proc=" << mpi_rank << "/" << mpi_num_proc << ", |part|=" << my_label_partition.size() << endl;
-	
-	/*ParallelPDSparse* solver = new ParallelPDSparse(param);
-	cerr << "#" ;
-	for(int r=0;r<my_label_partition.size();r++){
-		int k = my_label_partition[r];
+
+	vector<vector<int> > label_partition;
+	compute_label_partition(train->labels, N, K, mpi_rank, mpi_num_proc, label_partition);
+	//cerr << "proc=" << mpi_rank << "/" << mpi_num_proc << ", |part|=" << my_label_partition.size() << endl;
+	ParallelPDSparse* solver = new ParallelPDSparse(param);
+	int my_num_label = label_partition[mpi_rank].size();
+	SparseVec* wk_arr = new SparseVec[my_num_label];
+
+	for(int r=0;r<label_partition[mpi_rank].size();r++){
+		int k = label_partition[mpi_rank][r];
 		vector<int>& pos_sample = solver->pos_samples[k];
 		
 		//cerr << "class " << k <<" " <<"(|pos|="<<pos_sample.size()<<"):";
@@ -161,17 +173,81 @@ int main(int argc, char** argv){
 				it!=pos_sample.end(); it++)
 			solver->y[*it] = 1.0;
 		
-		SparseVec w_k;
-		solver->solve_one_class(pos_sample, w_k);
+		cerr << "proc-" << mpi_rank <<", class-" << r << ", ";
+		solver->solve_one_class(pos_sample, wk_arr[r]);
 		
 		for(vector<int>::iterator it=pos_sample.begin(); 
 				it!=pos_sample.end(); it++)
 			solver->y[*it] = -1.0;
+
+		//cerr << "." ;
 	}
-	cerr << "$";
-	*/
-	//StaticModel* model = new StaticModel(train);
-	//model->writeModel(param->modelFname);
+	cerr <<"*";
+	
+	MPI::COMM_WORLD.Barrier();
+	if( mpi_rank==0 )
+		cerr << endl;
+	
+	//Gather wk, k=1...K, from processes
+	
+	int nnz_wkj = 0;
+	for(int r=0;r<label_partition[mpi_rank].size();r++)
+		nnz_wkj += wk_arr[r].size();
+	int* nnz_wkj_arr = NULL;
+	if( mpi_rank==ROOT )
+		nnz_wkj_arr = new int[mpi_num_proc];
+	
+	MPI::COMM_WORLD.Gather(&nnz_wkj,1,MPI::INT, nnz_wkj_arr,1, MPI::INT, ROOT);
+	
+	int* disp = NULL;
+	int total_nnz = 0;
+	if( mpi_rank==ROOT){
+		disp = new int[mpi_num_proc];
+		size_to_displacement(nnz_wkj_arr, mpi_num_proc, disp);
+		total_nnz = disp[mpi_num_proc-1] + nnz_wkj_arr[mpi_num_proc-1];
+	}
+	
+	int* k_arr = new int[nnz_wkj];
+	int* j_arr = new int[nnz_wkj];
+	Float* v_arr = new Float[nnz_wkj];
+	int count=0;
+	for(int r=0;r<label_partition[mpi_rank].size();r++){
+		int k = label_partition[mpi_rank][r];
+		for(SparseVec::iterator it=wk_arr[r].begin(); it!=wk_arr[r].end(); it++){
+			int j = it->first;
+			Float val = it->second;
+			k_arr[count] = k;
+			j_arr[count] = j;
+			v_arr[count] = val;
+			count++;
+		}
+	}
+	
+	int* k_merge = NULL;
+	int* j_merge = NULL;
+	Float* v_merge = NULL;
+	if( mpi_rank == ROOT ){
+		k_merge = new int[total_nnz];
+		j_merge = new int[total_nnz];
+		v_merge = new Float[total_nnz];
+	}
+	
+	MPI::COMM_WORLD.Gatherv( k_arr, nnz_wkj, MPI::INT, k_merge, nnz_wkj_arr, disp, MPI::INT, ROOT);
+	MPI::COMM_WORLD.Gatherv( j_arr, nnz_wkj, MPI::INT, j_merge, nnz_wkj_arr, disp, MPI::INT, ROOT);
+	MPI::COMM_WORLD.Gatherv( v_arr, nnz_wkj, MPI::DOUBLE, v_merge, nnz_wkj_arr, disp, MPI::DOUBLE, ROOT);
+	
+	// Construct Model from k_arr, j_arr, v_arr
+	if( mpi_rank==ROOT ){
+		StaticModel* model = new StaticModel(train);
+		SparseVec* w = model->w;
+		for(int i=0;i<total_nnz;i++){
+			int k = k_merge[i];
+			int j = j_merge[i];
+			Float v = v_merge[i];
+			w[j].push_back(make_pair(k,v));
+		}
+		model->writeModel(param->modelFname);
+	}
 	
 	MPI::Finalize();
 }
