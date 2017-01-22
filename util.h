@@ -16,6 +16,8 @@
 #include<tuple>
 #include<cassert>
 #include<limits.h>
+#include<queue>
+
 using namespace std;
 
 typedef vector<pair<int,double> > SparseVec;
@@ -43,6 +45,21 @@ class ScoreComp{
 	private:
 	Float* score;
 };
+
+class ScoreCompAsc{
+	
+	public:
+	ScoreCompAsc(Float* _score){
+		score = _score;
+	}
+	bool operator()(const int& ind1, const int& ind2){
+		return score[ind1] < score[ind2];
+	}
+	private:
+	Float* score;
+};
+
+typedef priority_queue<int,vector<int>,ScoreComp> PQueue;
 
 class PermutationHash{
 	public:
@@ -140,9 +157,9 @@ int total_size( HashVec** w, int size ){
 	return sum;
 }
 
-long nnz( vector<SparseVec*>& data ){
+int nnz( vector<SparseVec*>& data ){
 	
-	long sum =0;
+	int sum =0;
 	for(int i=0;i<data.size();i++){
 		sum += data[i]->size();
 	}
@@ -170,6 +187,14 @@ void transpose(vector<SparseVec*>& A, int N, int D, vector<SparseVec>& B){
 			B[it->first].push_back(make_pair(i,it->second));
 	}
 }
+
+void size_to_displacement(int* size_arr, int len, int* disp_arr){
+	
+	disp_arr[0] = 0;
+	for(int i=1;i<len;i++)
+		disp_arr[i] = disp_arr[i-1] + size_arr[i-1];
+}
+
 
 // maintain top tK indices, stored in max_indices, where indices are sorted by x[].
 // Here the situation is x(i) has just been updated, where i may or may not exist in max_indices

@@ -218,6 +218,63 @@ class NewHash{
 
 };
 	
+double importance_samples( NewHash& sv, int num_sample, SparseVec& samples ){
+	
+	samples.clear();
+	if( sv.size() == 0 )
+		return 0.0;
+	
+	double* cum = new double[sv.size()];
+	NewHash::iterator it = sv.begin();
+	cum[0] = fabs(it->second);
+	++it;
+	for(int i=1;it!=sv.end();++it,++i)
+		cum[i] = cum[i-1] + fabs(it->second);
+	double weight_sum = cum[sv.size()-1];
+	
+	vector<double> rands;
+	for(int i=0;i<num_sample;i++)
+		rands.push_back( weight_sum * ((double)rand()/RAND_MAX) );
+	sort( rands.begin(), rands.end() );
+	
+	int i=0,j=0;
+	it = sv.begin();
+	while( i < rands.size() ){
+		
+		while( rands[i] > cum[j]  ){
+	       		j++;
+			++it;
+		}
+		
+		double count = 0.0;
+		
+		while( i<rands.size() && rands[i] < cum[j] ){
+			count+=1.0;
+			i++;
+		}
+		
+		if( it->second > 0.0 )
+			samples.push_back(make_pair(it->first,count));
+		else
+			samples.push_back(make_pair(it->first,-count));
+	}
 
+	double tmp = (weight_sum/num_sample);
+	for(SparseVec::iterator it2=samples.begin(); it2!=samples.end(); it2++)
+		it2->second *= tmp;
+	
+	delete[] cum;
+	
+	return weight_sum;
+}
+
+void hash_to_sv( NewHash& hash, SparseVec& sv ){
+	
+	sv.clear();
+	for(NewHash::iterator it=hash.begin(); it!=hash.end(); ++it){
+		if( it->second != 0.0 )
+			sv.push_back(make_pair(it->first, it->second));
+	}
+}
 
 #endif

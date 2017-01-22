@@ -58,20 +58,29 @@ class ParallelPDSparse{
 		}
 	}
 	
-	/*~ParallelPDSparse(){
+	~ParallelPDSparse(){
 		delete[] v;
 		
 		delete w;
+		delete w_nz;
 		delete[] alpha;
 		delete[] prod_arr;
-	}*/
+	}
 	
 	StaticModel* solve(){
 		
+		vector<int> class_index;
+		for(int i=0;i<K;i++)
+			class_index.push_back(i);
+		
+		random_shuffle(class_index.begin(), class_index.end());
+		
 		StaticModel* model = new StaticModel(train);
-		for(int k=0;k<K;k++){
-			//cerr << "class " << k <<" " <<"(|pos|="<<pos_samples[k].size()<<"):";
+		for(int r=0;r<class_index.size();r++){
 			
+			int k = class_index[r];
+			cerr << "r=" << r <<" " <<"(|pos|="<<pos_samples[k].size()<<"):";
+
 			for(vector<int>::iterator it=pos_samples[k].begin(); 
 				it!=pos_samples[k].end(); it++)
 				y[*it] = 1.0;
@@ -93,6 +102,95 @@ class ParallelPDSparse{
 	
 	void solve_one_class(vector<int>& pos_samples, SparseVec& w_k){
 		
+		if( 100*pos_samples.size() < N ){
+			active_set_CD( pos_samples, w_k );
+		}else{
+			randomized_CD( pos_samples, w_k );
+		}
+	}
+	
+	void randomized_CD(vector<int>& pos_samples, SparseVec& w_k){
+		
+		vector<int> act_index;
+		act_index.resize(N);
+		for(int i=0;i<N;i++)
+			act_index[i] = i;
+		
+		Float tol = 0.1;
+		int max_iter = 1000;
+		int iter=0;
+		while(iter<max_iter){
+			
+			Float residual = 0.0; //inf-norm of prox-grad
+
+			random_shuffle(act_index.begin(), act_index.end());
+			for(int r=0;r<act_index.size();r++){
+				int i = act_index[r];
+				Float yi = y[i];
+				SparseVec* xi = data[i];
+				//compute grad
+				//Float gi = yi*inner_prod(w, xi) - 1.0;
+				Float gi = yi*inner_prod(w, xi) - 1.0 + alpha[i]/(2.0*C);
+				//compute update
+				//Float alpha_i_new = min(max( alpha[i]-gi/XXt_diag[i], 0.0),C);
+				Float alpha_i_new = max( alpha[i]-gi/XXt_diag[i], 0.0);
+
+				//maintain v, w
+				Float yi_diff = yi*(alpha_i_new-alpha[i]);
+				Float diff_abs = fabs(yi_diff);
+				if( diff_abs > 1e-6 ){
+
+					residual = max(residual, diff_abs*XXt_diag[i]);
+
+					alpha[i] = alpha_i_new;
+
+					//other feature
+					for(SparseVec::iterator it=xi->begin(); 
+							it!=xi->end(); it++){
+
+						int j = it->first;
+						Float val = it->second;
+						
+						v[j] += yi_diff*val;
+
+						//Float wj_new = prox_l1( v[j], lambda );
+						if( j!=0 ) w[j] = prox_l1( v[j], lambda );
+						else       w[j] = v[j];
+					}
+				}
+			}
+			
+			if( residual < tol )
+				break;
+
+			iter++;
+		}
+		
+		//clean v,w and copy to w_k
+		w_k.clear();
+		for(int j=0;j<D;j++){
+			v[j] = 0.0;
+			if( fabs(w[j]) > 0.0 )
+				w_k.push_back(make_pair(j,w[j]));
+			w[j] = 0.0;
+		}
+		
+		//clean alpha
+		int nSV=0;
+		for(vector<int>::iterator it=act_index.begin(); it!=act_index.end(); it++){
+			int i = *it;
+			if( alpha[i] > 0.0 )
+				nSV++;
+			alpha[i] = 0.0;
+		}
+		
+		cerr << "#pos=" << pos_samples.size() << ", #ran_iter=" << iter 
+			<< ", w_nnz=" << w_k.size() << ", a_nnz=" << nSV
+			<< endl;
+	}
+	
+	void active_set_CD(vector<int>& pos_samples, SparseVec& w_k){
+		
 		//assert: alpha, w, v are all 0 (maintained by previous solver)
 		
 		//initialize act_index
@@ -104,7 +202,7 @@ class ParallelPDSparse{
 			act_index.push_back(rand()%N);
 
 		//main loop
-		double search_time, sub_time, overall_search_time=0.0, overall_sub_time=0.0;
+		double sub_time, overall_sub_time=0.0;
 		double prod_time = 0.0;
 		vector<int> v_change_ind; 
 		vector<int> prod_change_ind;
@@ -112,8 +210,10 @@ class ParallelPDSparse{
 		prod_change_ind.reserve(RESERVE_SIZE);
 		Float tol = 0.1;
 		int max_iter = 1000;
-		int max_inner = 10;
-		int max_select = pos_samples.size();
+		int max_inner = 50;
+		int max_select = 10*pos_samples.size();
+		//double sample_speedup_rate = 10.0;
+		SparseVec wk_samples;
 		int iter=0;
 		while(iter<max_iter){
 			
@@ -140,7 +240,7 @@ class ParallelPDSparse{
 					Float diff_abs = fabs(yi_diff);
 					if( diff_abs > 1e-6 ){
 
-						residual = max(residual, diff_abs*XXt_diag[i]);
+						//residual = max(residual, diff_abs*XXt_diag[i]);
 						//residual = max(residual, diff_abs);
 						
 						alpha[i] = alpha_i_new;
@@ -183,14 +283,23 @@ class ParallelPDSparse{
 			act_index = act_index_new;
 			sub_time += omp_get_wtime();
 			
-			search_time = -omp_get_wtime();
 			//search active negative samples
+			
+			////adjust select size
+			max_select = min( (int)act_index.size(), (int)(N/10) );
 			
 			////compute <w,x_i> for all i
 			prod_time -= omp_get_wtime();
-			//for(NewHash::iterator it=w_nz->begin();it!=w_nz->end();++it);
+			
+			//if( w_nz->size() > 10*sample_speedup_rate ){
+			//	int num_sample = (int)(w_nz->size()/sample_speedup_rate);
+			//	importance_samples( *w_nz, num_sample, wk_samples);
+			//}else{
+				hash_to_sv( *w_nz, wk_samples );
+			//}
 
-			for(NewHash::iterator it=w_nz->begin();it!=w_nz->end();++it){
+			for(SparseVec::iterator it=wk_samples.begin();it!=wk_samples.end();++it){
+			//for(NewHash::iterator it=w_nz->begin();it!=w_nz->end();++it){
 				int j = it->first;
 				if( j==0 )
 					continue;
@@ -238,10 +347,6 @@ class ParallelPDSparse{
 				prod_arr[*it] = 0.0;
 			prod_change_ind.clear();
 			
-			search_time += omp_get_wtime();
-			//adjust select size
-			//if( 2*max_select < act_index.size() )
-			//	max_select = min( 2*max_select, 10000 );
 			
 			//check exit or dump info
 			if( residual < tol )
@@ -250,37 +355,17 @@ class ParallelPDSparse{
 			//if( iter%10==0 )
 			//	cerr << ".";
 			
-			overall_search_time += search_time;
 			overall_sub_time += sub_time;
 			iter++;
 		}
 		
 		cerr << setprecision(3) ;
-		cerr << "#iter=" << iter << ", w_nnz=" << w_nz->size() << ", a_nnz=" << act_index.size()
-			<< ", search_time=" << overall_search_time 
+		cerr << "#pos=" << pos_samples.size() << ", #act_iter=" << iter 
+			<< ", w_nnz=" << w_nz->size() << ", a_nnz=" << act_index.size()
 			<< ", prod_time=" << prod_time 
 			<< ", sub_time=" << overall_sub_time 
 			<< endl;
 		
-		/*cerr << "pos:" << endl;
-		double pos_sum = 0.0;
-		for(vector<int>::iterator it=act_index.begin(); it!=act_index.end(); it++)
-			if( y[*it] > 0.0 ){
-				cerr << alpha[*it] << " ";
-				pos_sum += alpha[*it];
-			}
-		cerr << endl;
-		cerr << "pos_sum=" << pos_sum << endl;
-		cerr << "neg:" << endl;
-		double neg_sum = 0.0;
-		for(vector<int>::iterator it=act_index.begin(); it!=act_index.end(); it++)
-			if( y[*it] < 0.0 ){
-				cerr << alpha[*it] << " ";
-				neg_sum += alpha[*it];
-			}
-		cerr << endl;
-		cerr << "neg_sum=" << neg_sum << endl;
-		*/
 		//clean v,w and copy to w_k
 		w_k.clear();
 		for(vector<int>::iterator it=v_change_ind.begin(); it!=v_change_ind.end(); it++){
