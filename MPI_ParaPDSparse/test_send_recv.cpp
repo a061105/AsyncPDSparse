@@ -45,7 +45,6 @@ int main(int argc, char** argv){
 		
 	}else{
 		int* recv_buf = new int[batch_size];
-		//MPI::Status stat;
 		while(1){
 			
 			MPI::COMM_WORLD.Sendrecv(&mpi_rank,1,MPI::INT, ROOT, TAG, 

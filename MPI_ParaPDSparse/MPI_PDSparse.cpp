@@ -9,6 +9,7 @@ void exit_with_help(){
 	cerr << "-l lambda: L1 regularization weight (default 0.1)" << endl;
 	cerr << "-c cost: cost of each sample (default 1.0)" << endl;
 	cerr << "-t tau: degree of asynchronization (default 10)" << endl;
+	cerr << "-b batch_size: #pos_samples assigned to a MPI process per communication (default 1000)" << endl;
 	//cerr << "-r speed_up_rate: sample 1/r fraction of non-zero features to estimate gradient (default r = ceil(min( 5DK/(Clog(K)nnz(X)), nnz(X)/(5N) )) )" << endl;
 	//cerr << "-q split_up_rate: divide all classes into q disjoint subsets (default 1)" << endl;
 	cerr << "-m max_iter: maximum number of iterations allowed if -h not used (default 30)" << endl;
@@ -21,6 +22,8 @@ void exit_with_help(){
 	//cerr << "-d : dump model file when better heldout accuracy is achieved, model files will have name (model).<iter>" << endl;
 	exit(0);
 }
+
+int batch_size = 100;
 
 void parse_cmd_line(int argc, char** argv, Param* param){
 
@@ -38,6 +41,8 @@ void parse_cmd_line(int argc, char** argv, Param* param){
 			case 'c': param->C = atof(argv[i]);
 				  break;
 			case 't': param->tau = atoi(argv[i]);
+				  break;
+			case 'b': batch_size = atoi(argv[i]);
 				  break;
 			//case 'r': param->speed_up_rate = atoi(argv[i]);
 			//	  break;
@@ -79,60 +84,36 @@ void parse_cmd_line(int argc, char** argv, Param* param){
 	}
 }
 
-void compute_label_partition(vector<Labels>& labels, int N, int K, int mpi_rank, int mpi_num_proc,
-			vector<vector<int> >& label_partition){
+void label_freq_sort(vector<Labels>& labels, int N, int K, vector<pair<int,int> >& label_freq){
 	
 	//compute label frequency
-	double* label_freq = new double[K];
+	double* freq = new double[K];
 	for(int k=0;k<K;k++)
-		label_freq[k] = 0.0;
+		freq[k] = 0.0;
 	for(int i=0;i<N;i++)
 		for(Labels::iterator it=labels[i].begin(); it!=labels[i].end(); it++)
-			label_freq[*it]+=1.0;
+			freq[*it]+=1.0;
 	
 	//sort label index according to frequency
 	vector<int> label_index;
 	label_index.resize(K);
 	for(int k=0;k<K;k++)
 		label_index[k] = k;
-	sort(label_index.begin(), label_index.end(), ScoreComp(label_freq));
+	sort(label_index.begin(), label_index.end(), ScoreComp(freq));
 	
-	//compute label partition
-	Float* proc_sizes = new Float[mpi_num_proc];
-	for(int i=0;i<mpi_num_proc;i++)
-		proc_sizes[i] = 0.0;
-	
-	PQueue* pq = new PQueue(ScoreComp(proc_sizes));
-	for(int i=0;i<mpi_num_proc;i++)
-		pq->push(i);
-	
-	label_partition.resize(mpi_num_proc);
-	for(int i=0;i<mpi_num_proc;i++)
-		label_partition[i].clear();
-	
+	//put into SparseVec
+	label_freq.resize(K);
 	for(int i=0;i<K;i++){
 		int k = label_index[i];
-
-		int proc = pq->top();
-		pq->pop();
-		label_partition[proc].push_back(k);
-		
-		double freq = label_freq[k];
-		proc_sizes[proc] += freq;
-		pq->push(proc);
-	}
-	
-	//random permuttion
-	for(int i=0;i<mpi_num_proc;i++){
-		random_shuffle(label_partition[i].begin(), label_partition[i].end());
+		label_freq[i].first = k;
+		label_freq[i].second = (int)freq[k];
 	}
 
-	delete[] label_freq;
-	delete[] proc_sizes;
-	delete pq;
+	delete[] freq;
 }
 
 const int ROOT = 0;
+const int TAG = 0;
 
 int main(int argc, char** argv){
 	
@@ -155,43 +136,87 @@ int main(int argc, char** argv){
 		cerr << "D=" << D << endl; 
 		cerr << "K=" << K << endl;
 	}
-	
 
-	vector<vector<int> > label_partition;
-	compute_label_partition(train->labels, N, K, mpi_rank, mpi_num_proc, label_partition);
-	//cerr << "proc=" << mpi_rank << "/" << mpi_num_proc << ", |part|=" << my_label_partition.size() << endl;
-	ParallelPDSparse* solver = new ParallelPDSparse(param);
-	int my_num_label = label_partition[mpi_rank].size();
-	SparseVec* wk_arr = new SparseVec[my_num_label];
+	vector<int> labels_assigned;
+	vector<SparseVec> wk_arr;
+	if( mpi_rank == ROOT ){
+		
+		double overall_time = -omp_get_wtime();
+		
+		vector<pair<int,int> > label_freq;
+		label_freq_sort( train->labels, N, K, label_freq );
+		
+		int r=0;
+		int* send_buf = new int[batch_size];
+		int req_rank;
+		while( r < label_freq.size() ){
+			for(int i=0;i<batch_size;i++)
+				send_buf[i] = -1;
+			int freq_sum = 0;
+			for(int i=0; freq_sum<batch_size && r<label_freq.size();i++,r++){
+				send_buf[i] = label_freq[r].first;
+				freq_sum += label_freq[r].second;
+			}
+			MPI::COMM_WORLD.Recv( &req_rank, 1, MPI::INT, MPI::ANY_SOURCE, TAG);
+			MPI::COMM_WORLD.Send( send_buf, batch_size, MPI::INT, req_rank, TAG);
 
-	for(int r=0;r<label_partition[mpi_rank].size();r++){
-		int k = label_partition[mpi_rank][r];
-		vector<int>& pos_sample = solver->pos_samples[k];
-		
-		//cerr << "class " << k <<" " <<"(|pos|="<<pos_sample.size()<<"):";
-		for(vector<int>::iterator it=pos_sample.begin(); 
-				it!=pos_sample.end(); it++)
-			solver->y[*it] = 1.0;
-		
-		cerr << "proc-" << mpi_rank <<", class-" << r << ", ";
-		solver->solve_one_class(pos_sample, wk_arr[r]);
-		
-		for(vector<int>::iterator it=pos_sample.begin(); 
-				it!=pos_sample.end(); it++)
-			solver->y[*it] = -1.0;
+			cerr << "r=" << r << endl;
+		}
 
-		//cerr << "." ;
+		for(int i=0;i<batch_size;i++)
+			send_buf[i] = -1;
+		for(int i=1;i<mpi_num_proc;i++){
+			MPI::COMM_WORLD.Recv( &req_rank, 1, MPI::INT, MPI::ANY_SOURCE, TAG);
+			MPI::COMM_WORLD.Send( send_buf, batch_size, MPI::INT, req_rank, TAG);
+		}
+
+		overall_time += omp_get_wtime();
+		cerr << "overall_time=" << overall_time << endl;
+	}else{
+
+		ParallelPDSparse* solver = new ParallelPDSparse(param);
+		int* recv_buf = new int[batch_size];
+		int r = 0;
+		while(1){
+
+			MPI::COMM_WORLD.Sendrecv(&mpi_rank,1,MPI::INT, ROOT, TAG,
+					recv_buf, batch_size, MPI::INT, ROOT, TAG);
+			int i;
+			for(i=0;i<batch_size && recv_buf[i]!=-1;i++){
+				labels_assigned.push_back(recv_buf[i]);
+				wk_arr.push_back(SparseVec());
+			}
+
+			if( i==0 ) //not receiving any new label==> terminate
+				break;
+			
+			for(;r<labels_assigned.size();r++){
+				int k = labels_assigned[r];
+				vector<int>& pos_sample = solver->pos_samples[k];
+				
+				for(vector<int>::iterator it=pos_sample.begin(); 
+						it!=pos_sample.end(); it++)
+					solver->y[*it] = 1.0;
+
+				solver->solve_one_class(pos_sample, wk_arr[r]);
+				
+				for(vector<int>::iterator it=pos_sample.begin(); 
+						it!=pos_sample.end(); it++)
+					solver->y[*it] = -1.0;
+
+			}
+		}
+		cerr << "rank=" << mpi_rank << " done." << endl;
 	}
-	cerr <<"*";
 	
-	MPI::COMM_WORLD.Barrier();
-	if( mpi_rank==0 )
-		cerr << endl;
 	
 	//Gather wk, k=1...K, from processes
+	MPI::COMM_WORLD.Barrier();
+	if( mpi_rank==0 )
+		cerr << "writing model..." << endl;
 	
 	int nnz_wkj = 0;
-	for(int r=0;r<label_partition[mpi_rank].size();r++)
+	for(int r=0;r<labels_assigned.size();r++)
 		nnz_wkj += wk_arr[r].size();
 	int* nnz_wkj_arr = NULL;
 	if( mpi_rank==ROOT )
@@ -211,8 +236,8 @@ int main(int argc, char** argv){
 	int* j_arr = new int[nnz_wkj];
 	Float* v_arr = new Float[nnz_wkj];
 	int count=0;
-	for(int r=0;r<label_partition[mpi_rank].size();r++){
-		int k = label_partition[mpi_rank][r];
+	for(int r=0;r<labels_assigned.size();r++){
+		int k = labels_assigned[r];
 		for(SparseVec::iterator it=wk_arr[r].begin(); it!=wk_arr[r].end(); it++){
 			int j = it->first;
 			Float val = it->second;
@@ -248,6 +273,7 @@ int main(int argc, char** argv){
 		}
 		model->writeModel(param->modelFname);
 	}
+
 	
 	MPI::Finalize();
 }

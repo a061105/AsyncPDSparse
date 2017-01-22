@@ -150,11 +150,11 @@ class StaticModel{
 		label_name_list = new vector<string>();
 		label_index_map = new map<string,int>();
 	}
-	StaticModel(Param* param){
-		label_index_map = &(param->train->label_index_map);
-		label_name_list = &(param->train->label_name_list);
-		D = param->train->D;
-		K = param->train->K;
+	StaticModel(Problem* prob){
+		label_index_map = &(prob->label_index_map);
+		label_name_list = &(prob->label_name_list);
+		D = prob->D;
+		K = prob->K;
 		w = new SparseVec[D];
 	}
 	SparseVec* w;
@@ -164,7 +164,6 @@ class StaticModel{
 	map<string,int>* label_index_map;
 	
 	void writeModel( char* fname){
-		
 		ofstream fout(fname);
 		fout << "nr_class " << K << endl;
 		fout << "label ";
@@ -273,13 +272,13 @@ void readData(char* fname, Problem* prob)
 	prob->N = prob->data.size();
 	prob->K = label_index_map->size();
 	label_name_list->resize(prob->K);
-	/*for(map<string,int>::iterator it=label_index_map->begin();
+	for(map<string,int>::iterator it=label_index_map->begin();
 			it!=label_index_map->end();
 			it++)
-		(*label_name_list)[it->second] = it->first;*/
+		(*label_name_list)[it->second] = it->first;
 	
 	//random rehash labels
-	HashFunc* hashfun = new HashFunc(prob->K);
+	/*HashFunc* hashfun = new HashFunc(prob->K);
 	for(map<string,int>::iterator it=label_index_map->begin(); 
 		it!=label_index_map->end(); it++){
 		it->second = hashfun->get(it->second);
@@ -289,7 +288,7 @@ void readData(char* fname, Problem* prob)
 		for(int j=0;j<prob->labels[i].size();j++)
 			prob->labels[i][j] = hashfun->get(prob->labels[i][j]);
 	}
-	delete hashfun;
+	delete hashfun;*/
 
 	delete[] line;
 }
