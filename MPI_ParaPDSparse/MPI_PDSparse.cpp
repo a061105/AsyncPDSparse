@@ -194,16 +194,7 @@ int main(int argc, char** argv){
 				int k = labels_assigned[r];
 				vector<int>& pos_sample = solver->pos_samples[k];
 				
-				for(vector<int>::iterator it=pos_sample.begin(); 
-						it!=pos_sample.end(); it++)
-					solver->y[*it] = 1.0;
-
-				solver->solve_one_class(pos_sample, wk_arr[r]);
-				
-				for(vector<int>::iterator it=pos_sample.begin(); 
-						it!=pos_sample.end(); it++)
-					solver->y[*it] = -1.0;
-
+				solver->solve_one_class(k, pos_sample, wk_arr[r]);
 			}
 		}
 		cerr << "rank=" << mpi_rank << " done." << endl;

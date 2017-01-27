@@ -53,7 +53,7 @@ class ParallelPDSparse{
 				for(SparseVec::iterator it=data[i]->begin(); it!=data[i]->end(); it++)
 					XXt_diag[i] += it->second*it->second;
 				//for L2-loss
-				//XXt_diag[i] += 1.0/(2.0*C);
+				XXt_diag[i] += 1.0/(2.0*C);
 				/////////////////
 			}
 		}
@@ -80,22 +80,11 @@ class ParallelPDSparse{
 
 				int k = class_index[r];
 
-				if( pos_samples[k].size() != 3080 )
-					continue;
-
 				cerr << "r=" << r <<" " <<"(|pos|="<<pos_samples[k].size()<<"):";
 
-				for(vector<int>::iterator it=pos_samples[k].begin(); 
-						it!=pos_samples[k].end(); it++)
-					y[*it] = 1.0;
-
 				SparseVec w_k;
-				solve_one_class(pos_samples[k], w_k);
-
-				for(vector<int>::iterator it=pos_samples[k].begin(); 
-						it!=pos_samples[k].end(); it++)
-					y[*it] = -1.0;
-
+				solve_one_class(k, pos_samples[k], w_k);
+				
 				for(SparseVec::iterator it=w_k.begin(); it!=w_k.end(); it++)
 					model->w[it->first].push_back( make_pair(k,it->second) );
 			}
@@ -104,16 +93,22 @@ class ParallelPDSparse{
 			return model;
 		}
 
-		void solve_one_class(vector<int>& pos_samples, SparseVec& w_k){
+		void solve_one_class(int k, vector<int>& pos_samples, SparseVec& w_k){
 
+			for(vector<int>::iterator it=pos_samples.begin(); 
+					it!=pos_samples.end(); it++)
+				y[*it] = 1.0;
 			//if( 10*pos_samples.size() < N ){
-			active_set_CD( pos_samples, w_k );
+			active_set_CD( k, pos_samples, w_k );
 			//}else{
-			//	randomized_CD( pos_samples, w_k );
+			//	randomized_CD(k, pos_samples, w_k );
 			//}
+			for(vector<int>::iterator it=pos_samples.begin(); 
+					it!=pos_samples.end(); it++)
+				y[*it] = -1.0;
 		}
 
-		void randomized_CD(vector<int>& pos_samples, SparseVec& w_k){
+		void randomized_CD(int k, vector<int>& pos_samples, SparseVec& w_k){
 
 			vector<int> act_index;
 			act_index.resize(N);
@@ -193,7 +188,7 @@ class ParallelPDSparse{
 				<< endl;
 		}
 
-		void active_set_CD(vector<int>& pos_samples, SparseVec& w_k){
+		void active_set_CD(int k, vector<int>& pos_samples, SparseVec& w_k){
 
 			//assert: alpha, w, v are all 0 (maintained by previous solver)
 
@@ -216,10 +211,9 @@ class ParallelPDSparse{
 			v_change_ind.reserve(RESERVE_SIZE);
 			prod_change_ind.reserve(RESERVE_SIZE);
 			Float tol = 0.1;
-			int max_iter = 1000;
-			int max_inner = 20;
+			int max_iter = 20;
+			int max_inner = 50;
 			int max_select = 10*pos_samples.size();
-			int log_N = (int) log((double)N);
 			//double sample_speedup_rate = 10.0;
 			SparseVec wk_samples;
 			int iter=0;
@@ -325,7 +319,7 @@ class ParallelPDSparse{
 
 				select_time -= omp_get_wtime();
 				////find max
-				if( max_select < log_N ){
+				if( max_select < 4000 ){
 					list<pair<int,Float> > cand;
 					for(int k=0;k<max_select;k++)
 						cand.push_front(make_pair(-1,-1e300));
@@ -393,7 +387,7 @@ class ParallelPDSparse{
 			}
 
 			cerr << setprecision(3) ;
-			cerr << "#pos=" << pos_samples.size() << ", #act_iter=" << iter 
+			cerr << "k=" << k << ", #pos=" << pos_samples.size() << ", #act_iter=" << iter 
 				<< ", w_nnz=" << w_nz->size() << ", a_nnz=" << act_index.size()
 				<< ", prod_time=" << prod_time 
 				<< ", select_time=" << select_time 
