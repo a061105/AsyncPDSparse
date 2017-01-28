@@ -2,7 +2,7 @@
 #define NEWHASH
 #include "util.h"
 
-const int INIT_CAP = 16;
+const int INIT_CAP = 128;//Must be a multiple of 2
 const Float UPPER_UTIL_RATE = 0.75;
 const Float LOWER_UTIL_RATE = 0.5;
 
@@ -218,18 +218,26 @@ class NewHash{
 
 };
 	
-double importance_samples( NewHash& sv, int num_sample, SparseVec& samples ){
+void importance_samples( NewHash& sv, int num_sample, SparseVec& samples ){
 	
 	samples.clear();
 	if( sv.size() == 0 )
-		return 0.0;
+		return;
 	
 	double* cum = new double[sv.size()];
 	NewHash::iterator it = sv.begin();
-	cum[0] = fabs(it->second);
+	if( it->first != 0 )//not bias
+					cum[0] = fabs(it->second);
+	else
+					cum[0] = 0.0;
 	++it;
-	for(int i=1;it!=sv.end();++it,++i)
-		cum[i] = cum[i-1] + fabs(it->second);
+	for(int i=1;it!=sv.end();++it,++i){
+		if( it->first != 0 )//not bias
+						cum[i] = cum[i-1] + fabs(it->second);
+		else//bias
+						cum[i] = cum[i-1];
+		
+	}
 	double weight_sum = cum[sv.size()-1];
 	
 	vector<double> rands;
@@ -249,7 +257,7 @@ double importance_samples( NewHash& sv, int num_sample, SparseVec& samples ){
 		double count = 0.0;
 		
 		while( i<rands.size() && rands[i] < cum[j] ){
-			count+=1.0;
+			count += 1.0;
 			i++;
 		}
 		
@@ -264,8 +272,6 @@ double importance_samples( NewHash& sv, int num_sample, SparseVec& samples ){
 		it2->second *= tmp;
 	
 	delete[] cum;
-	
-	return weight_sum;
 }
 
 void hash_to_sv( NewHash& hash, SparseVec& sv ){

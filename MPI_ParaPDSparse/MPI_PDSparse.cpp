@@ -139,9 +139,10 @@ int main(int argc, char** argv){
 
 	vector<int> labels_assigned;
 	vector<SparseVec> wk_arr;
+	double overall_train_time = 0.0;
 	if( mpi_rank == ROOT ){
 		
-		double overall_time = -omp_get_wtime();
+		overall_train_time = -omp_get_wtime();
 		
 		vector<pair<int,int> > label_freq;
 		label_freq_sort( train->labels, N, K, label_freq );
@@ -170,8 +171,7 @@ int main(int argc, char** argv){
 			MPI::COMM_WORLD.Send( send_buf, batch_size, MPI::INT, req_rank, TAG);
 		}
 
-		overall_time += omp_get_wtime();
-		cerr << "overall_time=" << overall_time << endl;
+		overall_train_time += omp_get_wtime();
 	}else{
 
 		ParallelPDSparse* solver = new ParallelPDSparse(param);
@@ -203,8 +203,11 @@ int main(int argc, char** argv){
 	
 	//Gather wk, k=1...K, from processes
 	MPI::COMM_WORLD.Barrier();
-	if( mpi_rank==0 )
+	if( mpi_rank==0 ){
+		
+		cerr << "overall train time=" << overall_train_time << endl;
 		cerr << "writing model..." << endl;
+	}
 	
 	int nnz_wkj = 0;
 	for(int r=0;r<labels_assigned.size();r++)

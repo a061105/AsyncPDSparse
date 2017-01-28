@@ -55,7 +55,16 @@ class ParallelPDSparse{
 				//for L2-loss
 				XXt_diag[i] += 1.0/(2.0*C);
 				/////////////////
+				
 			}
+			/////////Top-R///////////////////
+			/*
+			rho = 0.01;
+			for(int i=0;i<N;i++){
+				if( y[i] < 0.0 )
+					XXt_diag[i] += rho;
+			}*/
+			//////////////////////////////
 		}
 
 		~ParallelPDSparse(){
@@ -197,7 +206,7 @@ class ParallelPDSparse{
 			act_index.reserve(RESERVE_SIZE);
 			for(vector<int>::iterator it=pos_samples.begin(); it!=pos_samples.end(); it++)
 				act_index.push_back(*it);
-			for(int r=0;r<pos_samples.size();r++){
+			for(int r=0;r<10*pos_samples.size();r++){
 				int i=rand()%N;
 				while( y[i] > 0.0 )
 					i=rand()%N;
@@ -211,20 +220,28 @@ class ParallelPDSparse{
 			v_change_ind.reserve(RESERVE_SIZE);
 			prod_change_ind.reserve(RESERVE_SIZE);
 			Float tol = 0.1;
-			int max_iter = 20;
-			int max_inner = 50;
-			int max_select = 10*pos_samples.size();
-			//double sample_speedup_rate = 10.0;
+			int max_iter = 15;
+			int max_inner = 10;
+			double sample_speedup_rate = 20.0;
+			int minimal_sample_size = 10;
+			//int minimal_sample_size = 1000000000;
+			int max_select = 100;
 			SparseVec wk_samples;
+			/////////////////////FOr Top R//////////////////
+			/*double alpha_neg_sum = 0.0;
+			double R = (double) pos_samples.size();*/
+			//////////////////////////////////////////////
+
 			int iter=0;
 			while(iter<max_iter){
-
-				Float residual = 0.0; //inf-norm of prox-grad
+				
+				//Float residual = 0.0; //inf-norm of prox-grad
+				Float residual = 1e300;
 				sub_time -= omp_get_wtime();
 				//subsolve
 				for(int inner=0;inner<max_inner;inner++){
 
-					//Float residual=0.0;
+					//Float inner_residual=0.0;
 					random_shuffle(act_index.begin(), act_index.end());
 					for(int r=0;r<act_index.size();r++){
 						int i = act_index[r];
@@ -233,6 +250,12 @@ class ParallelPDSparse{
 						//compute grad
 						//Float gi = yi*inner_prod(w, xi) - 1.0;
 						Float gi = yi*inner_prod(w, xi) - 1.0 + alpha[i]/(2.0*C);
+						
+						//////////////For Top-R Constraint///////////////////////
+						/*if( yi < 0.0 && alpha_neg_sum > R )
+							gi += rho*(alpha_neg_sum - R);*/
+						/////////////////////////////////////////////
+
 						//compute update
 						//Float alpha_i_new = min(max( alpha[i]-gi/XXt_diag[i], 0.0),C);
 						Float alpha_i_new = max( alpha[i]-gi/XXt_diag[i], 0.0);
@@ -242,11 +265,14 @@ class ParallelPDSparse{
 						Float diff_abs = fabs(yi_diff);
 						if( diff_abs > 1e-6 ){
 
-							//residual = max(residual, diff_abs*XXt_diag[i]);
-							//residual = max(residual, diff_abs);
-
+							//inner_residual = max(residual, diff_abs*XXt_diag[i]);
+							//inner_residual = max(residual, diff_abs);
+							
+							//////////////////Top-R///////////////////////
+							/*if( yi < 0.0 )
+								alpha_neg_sum += alpha_i_new-alpha[i];*/
+							//////////////////////////////////////////////
 							alpha[i] = alpha_i_new;
-
 							//other feature
 							for(SparseVec::iterator it=xi->begin(); 
 									it!=xi->end(); it++){
@@ -269,7 +295,7 @@ class ParallelPDSparse{
 							}
 						}
 					}
-					//if( residual < tol )
+					//if( inner_residual < tol )
 					//	break;
 				}
 
@@ -288,22 +314,22 @@ class ParallelPDSparse{
 				//search active negative samples
 
 				////adjust select size
-				max_select = min( (int)act_index.size(), (int)(N/10) );
+				max_select = min( max((int)act_index.size(),max_select), (int)(N/10) );
 
 				////compute <w,x_i> for all i
 				prod_time -= omp_get_wtime();
 
-				//if( w_nz->size() > 10*sample_speedup_rate ){
-				//	int num_sample = (int)(w_nz->size()/sample_speedup_rate);
-				//	importance_samples( *w_nz, num_sample, wk_samples);
-				//}else{
-				hash_to_sv( *w_nz, wk_samples );
-				//}
+				int num_sample = (int)(w_nz->size()/sample_speedup_rate);
+				if( w_nz->size() > minimal_sample_size*sample_speedup_rate ){
+					importance_samples( *w_nz, num_sample, wk_samples);
+				}else{
+					hash_to_sv( *w_nz, wk_samples );
+				}
 
 				for(SparseVec::iterator it=wk_samples.begin();it!=wk_samples.end();++it){
 
 					int j = it->first;
-					if( j==0 )
+					if( j==0 || data_inv[j].size()==0 )
 						continue;
 					Float wj = it->second;
 					for(SparseVec::iterator it2=data_inv[j].begin(); 
@@ -319,7 +345,7 @@ class ParallelPDSparse{
 
 				select_time -= omp_get_wtime();
 				////find max
-				if( max_select < 4000 ){
+				if( max_select <= 1000 ){
 					list<pair<int,Float> > cand;
 					for(int k=0;k<max_select;k++)
 						cand.push_front(make_pair(-1,-1e300));
@@ -328,8 +354,9 @@ class ParallelPDSparse{
 						if( alpha[i] > 0.0 || y[i] > 0.0 )
 							continue;
 						Float val = prod_arr[i];
+						Float gi = -(val+w[0])-1.0;
 						list<pair<int,Float> >::iterator it=cand.begin();
-						if( val <= it->second  )
+						if( val <= it->second || gi >= 0.0 )
 							continue;
 						it++;
 						for(;it!=cand.end() && val>it->second; it++);
@@ -341,6 +368,10 @@ class ParallelPDSparse{
 							it!=cand.end(); it++){
 						if(it->first!=-1){
 							Float gi = -(it->second+w[0])-1.0;
+							///////////////////Top-R////////////////////
+							/*if( alpha_neg_sum > R )
+								gi += rho*(alpha_neg_sum - R);*/
+							///////////////////////////////////////////
 							if( -gi > 0.0 ){
 								act_index.push_back(it->first);
 								residual = max( residual, -gi );
@@ -357,6 +388,10 @@ class ParallelPDSparse{
 							continue;
 						
 						Float gi = -(prod_arr[i]+w[0])-1.0;
+						///////////////////Top-R////////////////////
+						/*if( alpha_neg_sum > R )
+							gi += rho*(alpha_neg_sum - R);*/
+						///////////////////////////////////////////
 						if( -gi > 0.0 && i!=last_i ){
 							act_index.push_back(i);
 							residual = max( residual, -gi );
@@ -439,6 +474,8 @@ class ParallelPDSparse{
 		int N;
 		int K;
 		Float* XXt_diag;
+		
+		double rho; //For Top-R
 
 		//for active set search
 		Float* prod_arr;
