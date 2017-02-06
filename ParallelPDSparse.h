@@ -19,34 +19,50 @@ class ParallelPDSparse{
 			N = train->N;
 			D = train->D;
 			K = train->K;
+			num_threads = param->num_threads;
 			data = (train->data);
 			labels = (train->labels);
-
-
+			
 			index_transpose(labels, N, K, pos_samples);
 			transpose(data, N, D, data_inv);
-
-			alpha = new Float[N];
-			for(int i=0;i<N;i++)
-				alpha[i] = 0.0;
-
-			y = new Float[N];
-			for(int i=0;i<N;i++)
-				y[i] = -1.0;
-
-			v = new Float[D];
-			w = new Float[D];
-			for(int j=0;j<D;j++){
-				v[j] = 0.0;
-				w[j] = 0.0;
+			
+			alpha_arr = new Float*[num_threads];
+			for(int t=0;t<num_threads;t++){
+							alpha_arr[t] = new Float[N];
+							for(int i=0;i<N;i++)
+											alpha_arr[t][i] = 0.0;
+			}
+			
+			y_arr = new Float*[num_threads];
+			for(int t=0;t<num_threads;t++){
+							y_arr[t] = new Float[N];
+							for(int i=0;i<N;i++)
+											y_arr[t][i] = -1.0;
 			}
 
-			w_nz = new NewHash(new HashFunc(D));
-
-			prod_arr = new Float[N];
-			for(int i=0;i<N;i++)
-				prod_arr[i] = 0.0;
-
+			w_arr = new Float*[num_threads];
+			v_arr = new Float*[num_threads];
+			for(int t=0;t<num_threads;t++){
+							v_arr[t] = new Float[D];
+							w_arr[t] = new Float[D];
+							for(int j=0;j<D;j++){
+											v_arr[t][j] = 0.0;
+											w_arr[t][j] = 0.0;
+							}
+			}
+			
+			w_nz_arr = new NewHash*[num_threads];
+			for(int t=0;t<num_threads;t++){
+							w_nz_arr[t] = new NewHash(new HashFunc(D));
+			}
+			
+			prod_arr = new Float*[num_threads];
+			for(int t=0;t<num_threads;t++){
+							prod_arr[t] = new Float[N];
+							for(int i=0;i<N;i++)
+											prod_arr[t][i] = -1e300;
+			}
+			
 			XXt_diag = new Float[N];
 			for(int i=0;i<N;i++){
 				XXt_diag[i] = 0.0;
@@ -68,14 +84,21 @@ class ParallelPDSparse{
 		}
 
 		~ParallelPDSparse(){
-			delete[] v;
-
-			delete w;
-			delete w_nz;
-			delete[] alpha;
+			
+			for(int t=0;t<num_threads;t++){
+							delete[] v_arr[t];
+							delete[] w_arr[t];
+							delete w_nz_arr[t];
+							delete[] alpha_arr[t];
+							delete[] prod_arr[t];
+			}
+			delete[] v_arr;
+			delete[] w_arr;
+			delete w_nz_arr;
+			delete[] alpha_arr;
 			delete[] prod_arr;
 		}
-
+		
 		StaticModel* solve(){
 
 			vector<int> class_index;
@@ -103,21 +126,28 @@ class ParallelPDSparse{
 		}
 
 		void solve_one_class(int k, vector<int>& pos_samples, SparseVec& w_k){
+					
+						int t = omp_get_thread_num();
+						
+						for(vector<int>::iterator it=pos_samples.begin(); it!=pos_samples.end(); it++)
+										y_arr[t][*it] = 1.0;
 
-			for(vector<int>::iterator it=pos_samples.begin(); 
-					it!=pos_samples.end(); it++)
-				y[*it] = 1.0;
-			//if( 10*pos_samples.size() < N ){
-			active_set_CD( k, pos_samples, w_k );
-			//}else{
-			//	randomized_CD(k, pos_samples, w_k );
-			//}
-			for(vector<int>::iterator it=pos_samples.begin(); 
-					it!=pos_samples.end(); it++)
-				y[*it] = -1.0;
+						//if( 10*pos_samples.size() < N ){
+						active_set_CD( k, pos_samples, 
+													prod_arr[t], alpha_arr[t], y_arr[t], w_arr[t], w_nz_arr[t], v_arr[t],
+														w_k );
+						//}else{
+						//				randomized_CD(k, pos_samples, 
+						//											alpha_arr[t], y_arr[t], w_arr[t], w_nz_arr[t], v_arr[t],
+						//											w_k );
+						//}
+						for(vector<int>::iterator it=pos_samples.begin(); it!=pos_samples.end(); it++)
+										y_arr[t][*it] = -1.0;
 		}
 
-		void randomized_CD(int k, vector<int>& pos_samples, SparseVec& w_k){
+		void randomized_CD(int k, vector<int>& pos_samples, 
+										Float* alpha, Float* y, Float* w, NewHash* w_nz, Float* v,
+										SparseVec& w_k){
 
 			vector<int> act_index;
 			act_index.resize(N);
@@ -125,7 +155,7 @@ class ParallelPDSparse{
 				act_index[i] = i;
 
 			Float tol = 0.1;
-			int max_iter = 1000;
+			int max_iter = 100;
 			int iter=0;
 			while(iter<max_iter){
 
@@ -146,7 +176,7 @@ class ParallelPDSparse{
 					//maintain v, w
 					Float yi_diff = yi*(alpha_i_new-alpha[i]);
 					Float diff_abs = fabs(yi_diff);
-					if( diff_abs > 1e-6 ){
+					if( diff_abs > 1e-8 ){
 
 						residual = max(residual, diff_abs*XXt_diag[i]);
 
@@ -178,7 +208,7 @@ class ParallelPDSparse{
 			w_k.clear();
 			for(int j=0;j<D;j++){
 				v[j] = 0.0;
-				if( fabs(w[j]) > 0.0 )
+				if( fabs(w[j]) > 1e-2 ) //Dismec Heuristic
 					w_k.push_back(make_pair(j,w[j]));
 				w[j] = 0.0;
 			}
@@ -196,8 +226,10 @@ class ParallelPDSparse{
 				<< ", w_nnz=" << w_k.size() << ", a_nnz=" << nSV
 				<< endl;
 		}
-
-		void active_set_CD(int k, vector<int>& pos_samples, SparseVec& w_k){
+	
+		void active_set_CD(int k, vector<int>& pos_samples, 
+											Float* prod, Float* alpha, Float* y, Float* w, NewHash* w_nz, Float* v,
+										SparseVec& w_k){
 
 			//assert: alpha, w, v are all 0 (maintained by previous solver)
 
@@ -220,9 +252,9 @@ class ParallelPDSparse{
 			v_change_ind.reserve(RESERVE_SIZE);
 			prod_change_ind.reserve(RESERVE_SIZE);
 			Float tol = 0.1;
-			int max_iter = 15;
+			int max_iter = 10;
 			int max_inner = 10;
-			double sample_speedup_rate = 20.0;
+			double sample_speedup_rate = 30.0;
 			int minimal_sample_size = 10;
 			//int minimal_sample_size = 1000000000;
 			int max_select = 100;
@@ -248,8 +280,8 @@ class ParallelPDSparse{
 						Float yi = y[i];
 						SparseVec* xi = data[i];
 						//compute grad
-						//Float gi = yi*inner_prod(w, xi) - 1.0;
-						Float gi = yi*inner_prod(w, xi) - 1.0 + alpha[i]/(2.0*C);
+						//Float gi = yi*(w[0]+inner_prod(w, xi)) - 1.0;
+						Float gi = yi*(inner_prod(w, xi)) - 1.0 + alpha[i]/(2.0*C);
 						
 						//////////////For Top-R Constraint///////////////////////
 						/*if( yi < 0.0 && alpha_neg_sum > R )
@@ -259,7 +291,7 @@ class ParallelPDSparse{
 						//compute update
 						//Float alpha_i_new = min(max( alpha[i]-gi/XXt_diag[i], 0.0),C);
 						Float alpha_i_new = max( alpha[i]-gi/XXt_diag[i], 0.0);
-
+						
 						//maintain v, w
 						Float yi_diff = yi*(alpha_i_new-alpha[i]);
 						Float diff_abs = fabs(yi_diff);
@@ -274,8 +306,7 @@ class ParallelPDSparse{
 							//////////////////////////////////////////////
 							alpha[i] = alpha_i_new;
 							//other feature
-							for(SparseVec::iterator it=xi->begin(); 
-									it!=xi->end(); it++){
+							for(SparseVec::iterator it=xi->begin(); it!=xi->end(); it++){
 
 								int j = it->first;
 								Float val = it->second;
@@ -286,11 +317,14 @@ class ParallelPDSparse{
 
 								//Float wj_new = prox_l1( v[j], lambda );
 								Float wj_new;
-								if( j!=0 ) wj_new = prox_l1( v[j], lambda );
-								else       wj_new = v[j];
-
+								if( j!=0 )
+												wj_new = prox_l1( v[j], lambda );
+								else
+												wj_new = v[j];
+								
 								if( wj_new != 0.0 || w[j] != 0.0 )
 									w_nz->set( j, wj_new );
+
 								w[j] = wj_new;
 							}
 						}
@@ -336,9 +370,11 @@ class ParallelPDSparse{
 							it2!=data_inv[j].end(); it2++){
 						int i = it2->first;
 						Float xji = it2->second;
-						if( prod_arr[i] == 0.0 )
+						if( prod[i] == -1e300 ){
 							prod_change_ind.push_back(i);
-						prod_arr[i] += wj*xji;
+							prod[i] = 0.0;
+						}
+						prod[i] += wj*xji;
 					}
 				}
 				prod_time += omp_get_wtime();
@@ -346,6 +382,7 @@ class ParallelPDSparse{
 				select_time -= omp_get_wtime();
 				////find max
 				if( max_select <= 1000 ){
+					
 					list<pair<int,Float> > cand;
 					for(int k=0;k<max_select;k++)
 						cand.push_front(make_pair(-1,-1e300));
@@ -353,7 +390,7 @@ class ParallelPDSparse{
 						int i = prod_change_ind[r];
 						if( alpha[i] > 0.0 || y[i] > 0.0 )
 							continue;
-						Float val = prod_arr[i];
+						Float val = prod[i];
 						Float gi = -(val+w[0])-1.0;
 						list<pair<int,Float> >::iterator it=cand.begin();
 						if( val <= it->second || gi >= 0.0 )
@@ -369,8 +406,8 @@ class ParallelPDSparse{
 						if(it->first!=-1){
 							Float gi = -(it->second+w[0])-1.0;
 							///////////////////Top-R////////////////////
-							/*if( alpha_neg_sum > R )
-								gi += rho*(alpha_neg_sum - R);*/
+							//if( alpha_neg_sum > R )
+								//gi += rho*(alpha_neg_sum - R);
 							///////////////////////////////////////////
 							if( -gi > 0.0 ){
 								act_index.push_back(it->first);
@@ -379,7 +416,7 @@ class ParallelPDSparse{
 						}
 					}
 				}else{
-					sort(prod_change_ind.begin(), prod_change_ind.end(), ScoreComp(prod_arr));
+					nth_element(prod_change_ind.begin(), prod_change_ind.begin()+ max_select, prod_change_ind.end(), ScoreComp(prod));
 					int last_i = -1;
 					int count_added=0;
 					for(int r=0;r<prod_change_ind.size();r++){
@@ -387,7 +424,7 @@ class ParallelPDSparse{
 						if( alpha[i] > 0.0 || y[i] > 0.0 )
 							continue;
 						
-						Float gi = -(prod_arr[i]+w[0])-1.0;
+						Float gi = -(prod[i]+w[0])-1.0;
 						///////////////////Top-R////////////////////
 						/*if( alpha_neg_sum > R )
 							gi += rho*(alpha_neg_sum - R);*/
@@ -404,10 +441,10 @@ class ParallelPDSparse{
 				}
 				select_time += omp_get_wtime();
 
-				////clear prod_arr
+				////clear prod
 				for(vector<int>::iterator it=prod_change_ind.begin();
 						it!=prod_change_ind.end(); it++)
-					prod_arr[*it] = 0.0;
+					prod[*it] = -1e300;
 				prod_change_ind.clear();
 
 
@@ -449,7 +486,7 @@ class ParallelPDSparse{
 
 	private:
 
-		Float dual_objective(vector<int>& act_index){
+		/*Float dual_objective(vector<int>& act_index){
 
 			Float obj = 0.0;
 			for(NewHash::iterator it=w_nz->begin(); it!=w_nz->end(); ++it){
@@ -461,7 +498,7 @@ class ParallelPDSparse{
 				obj -= alpha[*it];
 
 			return obj;
-		}
+		}*/
 
 		Problem* train;
 		HeldoutEval* heldoutEval;
@@ -473,23 +510,24 @@ class ParallelPDSparse{
 		int D;
 		int N;
 		int K;
+		int num_threads;
 		Float* XXt_diag;
 		
 		double rho; //For Top-R
 
 		//for active set search
-		Float* prod_arr;
+		Float** prod_arr;
 
 	public:
 
 		vector<vector<int> > pos_samples;
-
+		
 		//dense representation of alpha
-		Float* alpha;
-		Float* y; //N*1
+		Float** alpha_arr;
+		Float** y_arr; //N*1
 		//w = prox(v);
-		Float* w;
-		NewHash* w_nz;
+		Float** w_arr;
+		NewHash** w_nz_arr;
 		//v=X'alpha
-		Float* v;
+		Float** v_arr;
 };

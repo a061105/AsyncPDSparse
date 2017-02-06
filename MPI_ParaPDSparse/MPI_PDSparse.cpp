@@ -7,9 +7,9 @@ void exit_with_help(){
 	cerr << "Usage: mpiexec -n [nodes] -f [hostfile] ./multiTrain (options) [train_data] (model)" << endl;	
 	cerr << "options:" << endl;
 	cerr << "-l lambda: L1 regularization weight (default 0.1)" << endl;
+	cerr << "-n num_thread: number of parallel threads per node (default 1)" << endl;
 	cerr << "-c cost: cost of each sample (default 1.0)" << endl;
-	cerr << "-t tau: degree of asynchronization (default 10)" << endl;
-	cerr << "-b batch_size: #pos_samples assigned to a MPI process per communication (default 1000)" << endl;
+	cerr << "-b batch_size: number of classes assigned by a node (with n threads) at a time (default 100)" << endl;
 	//cerr << "-r speed_up_rate: sample 1/r fraction of non-zero features to estimate gradient (default r = ceil(min( 5DK/(Clog(K)nnz(X)), nnz(X)/(5N) )) )" << endl;
 	//cerr << "-q split_up_rate: divide all classes into q disjoint subsets (default 1)" << endl;
 	cerr << "-m max_iter: maximum number of iterations allowed if -h not used (default 30)" << endl;
@@ -23,7 +23,7 @@ void exit_with_help(){
 	exit(0);
 }
 
-int batch_size = 500;
+int batch_size = 100;
 
 void parse_cmd_line(int argc, char** argv, Param* param){
 
@@ -40,7 +40,7 @@ void parse_cmd_line(int argc, char** argv, Param* param){
 				  break;
 			case 'c': param->C = atof(argv[i]);
 				  break;
-			case 't': param->tau = atoi(argv[i]);
+			case 'n': param->num_threads = atoi(argv[i]);
 				  break;
 			case 'b': batch_size = atoi(argv[i]);
 				  break;
@@ -99,7 +99,8 @@ void label_freq_sort(vector<Labels>& labels, int N, int K, vector<pair<int,int> 
 	label_index.resize(K);
 	for(int k=0;k<K;k++)
 		label_index[k] = k;
-	sort(label_index.begin(), label_index.end(), ScoreComp(freq));
+	//sort(label_index.begin(), label_index.end(), ScoreComp(freq));
+	random_shuffle(label_index.begin(), label_index.end());
 	
 	//put into SparseVec
 	label_freq.resize(K);
@@ -117,12 +118,13 @@ const int TAG = 0;
 
 int main(int argc, char** argv){
 	
-	MPI::Init(argc,argv);
+	MPI::Init_thread(argc,argv,MPI_THREAD_FUNNELED);
 	int mpi_rank = MPI::COMM_WORLD.Get_rank();
 	int mpi_num_proc = MPI::COMM_WORLD.Get_size();
+	
 	Param* param = new Param();
 	parse_cmd_line(argc, argv, param);
-	
+
 	Problem* train = new Problem();
 	readData( param->trainFname, train, true);
 	param->train = train;
@@ -154,11 +156,15 @@ int main(int argc, char** argv){
 		while( r < label_freq.size() ){
 			for(int i=0;i<batch_size;i++)
 				send_buf[i] = -1;
-			int freq_sum = 0;
+
+			/*int freq_sum = 0;
 			for(int i=0; freq_sum<batch_size && r<label_freq.size();i++,r++){
-				send_buf[i] = label_freq[r].first;
-				freq_sum += label_freq[r].second;
-			}
+					send_buf[i] = label_freq[r].first;
+					freq_sum += label_freq[r].second;
+			}*/
+			for(int i=0;i<batch_size && r< label_freq.size(); i++,r++)
+					send_buf[i] = label_freq[r].first;
+			
 			MPI::COMM_WORLD.Recv( &req_rank, 1, MPI::INT, MPI::ANY_SOURCE, TAG);
 			MPI::COMM_WORLD.Send( send_buf, batch_size, MPI::INT, req_rank, TAG);
 
@@ -174,18 +180,24 @@ int main(int argc, char** argv){
 
 		overall_train_time += omp_get_wtime();
 	}else{ 
-		////worker code
 		
+		////worker code
+		omp_set_num_threads(param->num_threads);
+
 		ParallelPDSparse* solver = new ParallelPDSparse(param);
 		int* recv_buf = new int[batch_size];
-		int r = 0;
+		vector<int> label_batch;
+		int offset = 0;
 		while(1){
 			
 			MPI::COMM_WORLD.Sendrecv(&mpi_rank,1,MPI::INT, ROOT, TAG,
 					recv_buf, batch_size, MPI::INT, ROOT, TAG);
 			int i;
+			label_batch.clear();
 			for(i=0;i<batch_size && recv_buf[i]!=-1;i++){
-				labels_assigned.push_back(recv_buf[i]);
+				int k = recv_buf[i];
+				label_batch.push_back(k);
+				labels_assigned.push_back(k);
 				wk_arr.push_back(SparseVec());
 			}
 
@@ -193,12 +205,12 @@ int main(int argc, char** argv){
 				break;
 			
 			#pragma omp parallel for
-			for(;r<labels_assigned.size();r++){
-				int k = labels_assigned[r];
+			for(int r=0;r<label_batch.size();r++){
+				int k = label_batch[r];
 				vector<int>& pos_sample = solver->pos_samples[k];
-				
-				solver->solve_one_class(k, pos_sample, wk_arr[r]);
+				solver->solve_one_class(k, pos_sample, wk_arr[offset+r]);
 			}
+			offset += label_batch.size();
 		}
 		cerr << "rank=" << mpi_rank << " done." << endl;
 	}

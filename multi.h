@@ -101,6 +101,7 @@ class Param{
 	Float lambda; //for L1-norm (default 1/N)
 	Float C; //weight of loss
 	int tau;//degree of asynchronization (for AsyncPDSparse)
+	int num_threads;//number of threads per node
 	int speed_up_rate; // speed up rate for sampling
 	int split_up_rate; // split up [K] into a number of subsets	
 	Problem* train;
