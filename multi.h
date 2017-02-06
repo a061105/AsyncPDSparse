@@ -186,7 +186,7 @@ class StaticModel{
 	}
 };
 
-void readData(char* fname, Problem* prob)
+void readData(char* fname, Problem* prob, bool add_bias)
 {
 	map<string,int>* label_index_map = &(prob->label_index_map);
 	vector<string>* label_name_list = &(prob->label_name_list);
@@ -241,7 +241,8 @@ void readData(char* fname, Problem* prob)
 		
 		SparseVec* ins = new SparseVec();
 		//adding Bias
-		ins->push_back(make_pair(0,1.0));
+		if( add_bias )
+						ins->push_back(make_pair(0,1.0));
 		/////////////
 		for(int i=st;i<tokens.size();i++){
 			vector<string> kv = split(tokens[i],":");

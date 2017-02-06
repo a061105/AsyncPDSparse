@@ -1,4 +1,4 @@
-all: clean multiTrain multiPred
+all: clean multiTrain multiPred2 multiPred3
 
 #.PHONY: multiTrain
 
@@ -6,5 +6,9 @@ multiTrain:
 	g++ -fopenmp -std=c++11 -O3 -o multiTrain multiTrain.cpp
 multiPred:
 	g++ -fopenmp -std=c++11 -O3 -o multiPred multiPred.cpp
+multiPred2:
+	g++ -fopenmp -std=c++11 -O3 -o multiPred2 multiPred2.cpp
+multiPred3:
+	g++ -fopenmp -std=c++11 -O3 -o multiPred3 multiPred3.cpp
 clean:
-	rm -f multiTrain multiPred
+	rm -f multiTrain multiPred multiPred2 multiPred3

@@ -23,7 +23,7 @@ void exit_with_help(){
 	exit(0);
 }
 
-int batch_size = 100;
+int batch_size = 500;
 
 void parse_cmd_line(int argc, char** argv, Param* param){
 
@@ -124,7 +124,7 @@ int main(int argc, char** argv){
 	parse_cmd_line(argc, argv, param);
 	
 	Problem* train = new Problem();
-	readData( param->trainFname, train);
+	readData( param->trainFname, train, true);
 	param->train = train;
 
 	int D = train->D;
@@ -141,7 +141,8 @@ int main(int argc, char** argv){
 	vector<SparseVec> wk_arr;
 	double overall_train_time = 0.0;
 	if( mpi_rank == ROOT ){
-		
+		/////coordinator code
+
 		overall_train_time = -omp_get_wtime();
 		
 		vector<pair<int,int> > label_freq;
@@ -172,13 +173,14 @@ int main(int argc, char** argv){
 		}
 
 		overall_train_time += omp_get_wtime();
-	}else{
-
+	}else{ 
+		////worker code
+		
 		ParallelPDSparse* solver = new ParallelPDSparse(param);
 		int* recv_buf = new int[batch_size];
 		int r = 0;
 		while(1){
-
+			
 			MPI::COMM_WORLD.Sendrecv(&mpi_rank,1,MPI::INT, ROOT, TAG,
 					recv_buf, batch_size, MPI::INT, ROOT, TAG);
 			int i;
@@ -190,6 +192,7 @@ int main(int argc, char** argv){
 			if( i==0 ) //not receiving any new label==> terminate
 				break;
 			
+			#pragma omp parallel for
 			for(;r<labels_assigned.size();r++){
 				int k = labels_assigned[r];
 				vector<int>& pos_sample = solver->pos_samples[k];
