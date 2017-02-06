@@ -253,9 +253,9 @@ class ParallelPDSparse{
 			prod_change_ind.reserve(RESERVE_SIZE);
 			Float tol = 0.1;
 			int max_iter = 10;
-			int max_inner = 10;
-			double sample_speedup_rate = 30.0;
-			int minimal_sample_size = 10;
+			int max_inner = 1;
+			double sample_speedup_rate = 100.0;
+			int minimal_sample_size = 1;
 			//int minimal_sample_size = 1000000000;
 			int max_select = 100;
 			SparseVec wk_samples;
@@ -391,9 +391,9 @@ class ParallelPDSparse{
 						if( alpha[i] > 0.0 || y[i] > 0.0 )
 							continue;
 						Float val = prod[i];
-						Float gi = -(val+w[0])-1.0;
+						//Float gi = -(val+w[0])-1.0;
 						list<pair<int,Float> >::iterator it=cand.begin();
-						if( val <= it->second || gi >= 0.0 )
+						if( val <= it->second /*|| gi >= 0.0*/ )
 							continue;
 						it++;
 						for(;it!=cand.end() && val>it->second; it++);
@@ -404,39 +404,37 @@ class ParallelPDSparse{
 					for(list<pair<int,Float> >::iterator it=cand.begin();
 							it!=cand.end(); it++){
 						if(it->first!=-1){
-							Float gi = -(it->second+w[0])-1.0;
+							//Float gi = -(it->second+w[0])-1.0;
 							///////////////////Top-R////////////////////
 							//if( alpha_neg_sum > R )
 								//gi += rho*(alpha_neg_sum - R);
 							///////////////////////////////////////////
-							if( -gi > 0.0 ){
+							//if( -gi > 0.0 ){
 								act_index.push_back(it->first);
-								residual = max( residual, -gi );
-							}
+								//residual = max( residual, -gi );
+							//}
 						}
 					}
 				}else{
 					nth_element(prod_change_ind.begin(), prod_change_ind.begin()+ max_select, prod_change_ind.end(), ScoreComp(prod));
-					int last_i = -1;
 					int count_added=0;
 					for(int r=0;r<prod_change_ind.size();r++){
 						int i = prod_change_ind[r];
 						if( alpha[i] > 0.0 || y[i] > 0.0 )
 							continue;
 						
-						Float gi = -(prod[i]+w[0])-1.0;
+						//Float gi = -(prod[i]+w[0])-1.0;
 						///////////////////Top-R////////////////////
 						/*if( alpha_neg_sum > R )
 							gi += rho*(alpha_neg_sum - R);*/
 						///////////////////////////////////////////
-						if( -gi > 0.0 && i!=last_i ){
+						//if( -gi > 0.0 ){
 							act_index.push_back(i);
-							residual = max( residual, -gi );
+							//residual = max( residual, -gi );
 							count_added++;
 							if( count_added >= max_select )
 								break;
-						}
-						last_i = i;
+						//}
 					}
 				}
 				select_time += omp_get_wtime();

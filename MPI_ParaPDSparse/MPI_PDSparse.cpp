@@ -168,7 +168,7 @@ int main(int argc, char** argv){
 			MPI::COMM_WORLD.Recv( &req_rank, 1, MPI::INT, MPI::ANY_SOURCE, TAG);
 			MPI::COMM_WORLD.Send( send_buf, batch_size, MPI::INT, req_rank, TAG);
 
-			cerr << "r=" << r << endl;
+			cerr << "#labels_solved=" << r << endl;
 		}
 
 		for(int i=0;i<batch_size;i++)

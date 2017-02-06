@@ -2,43 +2,6 @@
 #include <omp.h>
 #include <cassert>
 
-StaticModel* readModel(char* file){
-
-				StaticModel* model = new StaticModel();
-
-				ifstream fin(file);
-				char* tmp = new char[LINE_LEN];
-				fin >> tmp >> (model->K);
-				
-				fin >> tmp;
-				string name;
-				for(int k=0;k<model->K;k++){
-								fin >> name;
-								model->label_name_list->push_back(name);
-								model->label_index_map->insert(make_pair(name,k));
-				}
-
-				fin >> tmp >> (model->D);
-				model->w = new SparseVec[model->D];
-
-				vector<string> ind_val;
-				int nnz_j;
-				for(int j=0;j<model->D;j++){
-								fin >> nnz_j;
-								model->w[j].resize(nnz_j);
-								for(int r=0;r<nnz_j;r++){
-												fin >> tmp;
-												ind_val = split(tmp,":");
-												int k = atoi(ind_val[0].c_str());
-												Float val = atof(ind_val[1].c_str());
-												model->w[j][r].first = k;
-												model->w[j][r].second = val;
-								}
-				}
-
-				delete[] tmp;
-				return model;
-}
 
 int main(int argc, char** argv){
 
@@ -59,7 +22,6 @@ int main(int argc, char** argv){
 				
 				cerr << "Ntest=" << prob->N << endl;
 
-				double start = omp_get_wtime();
 				//compute accuracy
 				vector<SparseVec*>* data = &(prob->data);
 				vector<Labels>* labels = &(prob->labels);
@@ -68,6 +30,7 @@ int main(int argc, char** argv){
 				Float* prod = new Float[model->K];
 				memset(prod, 0.0, sizeof(Float)*model->K);
 				
+				double start = omp_get_wtime();
 				vector<int> touched_index;
 				for(int i=0;i<prob->N;i++){
 								

@@ -295,4 +295,42 @@ void readData(char* fname, Problem* prob, bool add_bias)
 	delete[] line;
 }
 
+StaticModel* readModel(char* file){
+
+				StaticModel* model = new StaticModel();
+
+				ifstream fin(file);
+				char* tmp = new char[LINE_LEN];
+				fin >> tmp >> (model->K);
+				
+				fin >> tmp;
+				string name;
+				for(int k=0;k<model->K;k++){
+								fin >> name;
+								model->label_name_list->push_back(name);
+								model->label_index_map->insert(make_pair(name,k));
+				}
+
+				fin >> tmp >> (model->D);
+				model->w = new SparseVec[model->D];
+
+				vector<string> ind_val;
+				int nnz_j;
+				for(int j=0;j<model->D;j++){
+								fin >> nnz_j;
+								model->w[j].resize(nnz_j);
+								for(int r=0;r<nnz_j;r++){
+												fin >> tmp;
+												ind_val = split(tmp,":");
+												int k = atoi(ind_val[0].c_str());
+												Float val = atof(ind_val[1].c_str());
+												model->w[j][r].first = k;
+												model->w[j][r].second = val;
+								}
+				}
+
+				delete[] tmp;
+				return model;
+}
+
 #endif

@@ -141,6 +141,16 @@ double norm_sq( double* v, int size ){
 	return sum;
 }
 
+double norm_L1( SparseVec& v ){
+		
+			double sum = 0.0;
+			for(SparseVec::iterator it=v.begin(); it!=v.end(); it++){
+					sum += fabs(it->second);
+			}
+			
+			return sum;
+}
+
 int total_size( vector<int>* alpha, int size ){
 	
 	int sum = 0;
@@ -184,6 +194,16 @@ void transpose(vector<SparseVec*>& A, int N, int D, vector<SparseVec>& B){
 		B[j].clear();
 	for(int i=0;i<N;i++){
 		for(SparseVec::iterator it=A[i]->begin(); it!=A[i]->end(); it++)
+			B[it->first].push_back(make_pair(i,it->second));
+	}
+}
+
+void transpose(SparseVec* A, int D, int K, SparseVec* B){
+	
+	for(int j=0;j<K;j++)
+		B[j].clear();
+	for(int i=0;i<D;i++){
+		for(SparseVec::iterator it=A[i].begin(); it!=A[i].end(); it++)
 			B[it->first].push_back(make_pair(i,it->second));
 	}
 }

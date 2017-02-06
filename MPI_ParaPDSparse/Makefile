@@ -1,7 +1,7 @@
 FLAG = -O3 -std=c++11 -fopenmp
 predict = ../multiPred3
-nhosts = 11
-nthreads = 10
+nhosts = 50
+nthreads = 1
 
 all:
 	mpic++.mpich ${FLAG} -o MPI_PDSparse MPI_PDSparse.cpp
@@ -9,17 +9,17 @@ sector:
 	mpiexec.mpich -n $(nhosts) -f hostfile$(nhosts) ./MPI_PDSparse -l 0.1 -n $(nthreads) -b 20 ../../data/sector.train
 	${predict} ../../data/sector.test  model 20
 aloi:
-	mpiexec.mpich  -n $(nhosts) -f hostfile$(nhosts) ./MPI_PDSparse -l 0.01 -n $(nthreads) -b 50 ../../ExtremeMulticlass/examples/aloi.bin/aloi.bin.train
+	mpiexec.mpich  -n $(nhosts) -f hostfile$(nhosts) ./MPI_PDSparse -l 0.01 -n $(nthreads) -b 50 ../../ExtremeMulticlass/examples/aloi.bin/aloi.bin.train model
 	${predict} ../../ExtremeMulticlass/examples/aloi.bin/aloi.bin.test model 20
 LSHTC1:
 	mpiexec.mpich -n $(nhosts) -f hostfile$(nhosts) ./MPI_PDSparse -l 0.01 -n $(nthreads) -b 300 ../../ExtremeMulticlass/examples/LSHTC1/LSHTC1.train
 	${predict} ../../ExtremeMulticlass/examples/LSHTC1/LSHTC1.test model 20
 Dmoz:
-	mpiexec.mpich -n $(nhosts) -f hostfile$(nhosts) ./MPI_PDSparse -l 0.01 -n $(nthreads) -b 30  ../../ExtremeMulticlass/examples/Dmoz/Dmoz.train
+	mpiexec.mpich -n $(nhosts) -f hostfile$(nhosts) ./MPI_PDSparse -l 0.01 -n $(nthreads) -b 50  ../../ExtremeMulticlass/examples/Dmoz/Dmoz.train
 	${predict} ../../ExtremeMulticlass/examples/Dmoz/Dmoz.test model 20
 wiki325:
-	mpiexec.mpich -n $(nhosts) -f hostfile$(nhosts) ./MPI_PDSparse -c 1 -l 0.005 -n $(nthreads)  ../../data/VarmasData/WikiLSHTC/wikiLSHTC.tfidf.norm.train model.wiki.c1.l005
-	${predict} ../../data/VarmasData/WikiLSHTC/wikiLSHTC.tfidf.norm.test  model.wiki.c1.l005 20
+	mpiexec.mpich -n $(nhosts) -f hostfile$(nhosts) ./MPI_PDSparse -c 1 -l 0.1 -n $(nthreads) -b 100 ../../data/VarmasData/WikiLSHTC/wikiLSHTC.tfidf.norm.train model.wiki.c1.l1
+	${predict} ../../data/VarmasData/WikiLSHTC/wikiLSHTC.tfidf.norm.test  model.wiki.c1.l1 20
 wiki_small:
 	mpiexec.mpich -n $(nhosts) -f hostfile$(nhosts) ./MPI_PDSparse -c 0.1 -l 0.001 -n $(nthreads)  ../../data/VarmasData/WikiLSHTC/wikiLSHTC_train.170k model
 	${predict} ../../data/VarmasData/WikiLSHTC/wikiLSHTC_val  model 20
