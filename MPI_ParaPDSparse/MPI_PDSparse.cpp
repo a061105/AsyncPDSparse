@@ -119,7 +119,7 @@ const int TAG = 0;
 
 int main(int argc, char** argv){
 	
-	MPI::Init_thread(argc,argv,MPI_THREAD_FUNNELED);
+	MPI::Init_thread(argc,argv,MPI_THREAD_MULTIPLE);
 	int mpi_rank = MPI::COMM_WORLD.Get_rank();
 	int mpi_num_proc = MPI::COMM_WORLD.Get_size();
 	
@@ -140,8 +140,11 @@ int main(int argc, char** argv){
 		cerr << "K=" << K << endl;
 	}
 
+	//worker results will be merged into these two structures
 	vector<int> labels_assigned;
 	vector<SparseVec> wk_arr;
+	//////////////////////////////////////////
+	
 	Float overall_train_time = 0.0;
 	if( mpi_rank == ROOT ){
 		/////coordinator code
@@ -174,7 +177,9 @@ int main(int argc, char** argv){
 
 		for(int i=0;i<batch_size;i++)
 			send_buf[i] = -1;
-		for(int i=1;i<mpi_num_proc;i++){
+
+		int num_worker = (mpi_num_proc-1)*(param->num_threads);
+		for(int i=0;i<num_worker;i++){
 			MPI::COMM_WORLD.Recv( &req_rank, 1, MPI::INT, MPI::ANY_SOURCE, TAG);
 			MPI::COMM_WORLD.Send( send_buf, batch_size, MPI::INT, req_rank, TAG);
 		}
@@ -183,14 +188,34 @@ int main(int argc, char** argv){
 	}else{ 
 		
 		////worker code
-		omp_set_num_threads(param->num_threads);
-
+		int nthreads= param->num_threads;
+		omp_set_num_threads(nthreads);
+		
 		ParallelPDSparse* solver = new ParallelPDSparse(param);
-		int* recv_buf = new int[batch_size];
-		vector<int> label_batch;
-		int offset = 0;
+		
+		////for multi thread
+		vector<int>* labels_assigned_arr = new vector<int>[nthreads];
+		vector<SparseVec>* wk_arr_arr = new vector<SparseVec>[nthreads];
+		int** recv_buf_arr = new int*[nthreads];
+		for(int i=0;i<nthreads;i++)
+						recv_buf_arr[i] = new int[batch_size];
+		vector<int>* label_batch_arr = new vector<int>[nthreads];
+		
+		int* offset_arr = new int[nthreads];
+		for(int i=0;i<nthreads;i++)
+						offset_arr[i] = 0;
+		/////////////////////
+		
+		#pragma omp parallel
 		while(1){
 			
+			int t = omp_get_thread_num();
+			
+			vector<int>& labels_assigned = labels_assigned_arr[t];
+			vector<SparseVec>& wk_arr = wk_arr_arr[t];
+			int* recv_buf = recv_buf_arr[t];
+			vector<int>& label_batch = label_batch_arr[t];
+
 			MPI::COMM_WORLD.Sendrecv(&mpi_rank,1,MPI::INT, ROOT, TAG,
 					recv_buf, batch_size, MPI::INT, ROOT, TAG);
 			int i;
@@ -201,22 +226,31 @@ int main(int argc, char** argv){
 				labels_assigned.push_back(k);
 				wk_arr.push_back(SparseVec());
 			}
-
-			if( i==0 ) //not receiving any new label==> terminate
-				break;
 			
-			#pragma omp parallel for
+			if( i==0 ){ //not receiving any new label==> terminate
+					cerr << "rank=" << mpi_rank << ", thread=" << t << ", done." << endl;
+					break;
+			}
+			
 			for(int r=0;r<label_batch.size();r++){
 				int k = label_batch[r];
 				vector<int>& pos_sample = solver->pos_samples[k];
-				solver->solve_one_class(k, pos_sample, wk_arr[offset+r]);
+				solver->solve_one_class(k, pos_sample, wk_arr[offset_arr[t]+r]);
 			}
-			offset += label_batch.size();
+			
+			offset_arr[t] += label_batch.size();
 		}
-		cerr << "rank=" << mpi_rank << " done." << endl;
-		delete solver;
+		
+
+		//merge results of each thread
+		for(int t=0;t<nthreads;t++){
+						for(int i=0;i<labels_assigned_arr[t].size();i++)
+										labels_assigned.push_back(labels_assigned_arr[t][i]);
+						for(int i=0;i<wk_arr_arr[t].size();i++)
+										wk_arr.push_back(wk_arr_arr[t][i]);
+		}
 	}
-	
+
 	//Gather wk, k=1...K, from processes
 	MPI::COMM_WORLD.Barrier();
 	if( mpi_rank==0 ){
