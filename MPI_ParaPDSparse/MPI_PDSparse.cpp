@@ -2,6 +2,7 @@
 #include "../multi.h"
 #include "../ParallelPDSparse.h"
 #include <mpi.h>
+#include <omp.h>
 
 void exit_with_help(){
 	cerr << "Usage: mpiexec -n [nodes] -f [hostfile] ./multiTrain (options) [train_data] (model)" << endl;	
@@ -87,7 +88,7 @@ void parse_cmd_line(int argc, char** argv, Param* param){
 void label_freq_sort(vector<Labels>& labels, int N, int K, vector<pair<int,int> >& label_freq){
 	
 	//compute label frequency
-	double* freq = new double[K];
+	Float* freq = new Float[K];
 	for(int k=0;k<K;k++)
 		freq[k] = 0.0;
 	for(int i=0;i<N;i++)
@@ -99,8 +100,8 @@ void label_freq_sort(vector<Labels>& labels, int N, int K, vector<pair<int,int> 
 	label_index.resize(K);
 	for(int k=0;k<K;k++)
 		label_index[k] = k;
-	//sort(label_index.begin(), label_index.end(), ScoreComp(freq));
-	random_shuffle(label_index.begin(), label_index.end());
+	sort(label_index.begin(), label_index.end(), ScoreComp(freq));
+	//random_shuffle(label_index.begin(), label_index.end());
 	
 	//put into SparseVec
 	label_freq.resize(K);
@@ -141,7 +142,7 @@ int main(int argc, char** argv){
 
 	vector<int> labels_assigned;
 	vector<SparseVec> wk_arr;
-	double overall_train_time = 0.0;
+	Float overall_train_time = 0.0;
 	if( mpi_rank == ROOT ){
 		/////coordinator code
 
@@ -213,8 +214,8 @@ int main(int argc, char** argv){
 			offset += label_batch.size();
 		}
 		cerr << "rank=" << mpi_rank << " done." << endl;
+		delete solver;
 	}
-	
 	
 	//Gather wk, k=1...K, from processes
 	MPI::COMM_WORLD.Barrier();
