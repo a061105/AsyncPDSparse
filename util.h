@@ -29,6 +29,32 @@ const int FNAME_LEN = 1000;
 const int INF = INT_MAX;
 const int RESERVE_SIZE = 1000;
 
+ofstream& operator<<(ofstream& fout, SparseVec& sv){
+		
+				int size = sv.size();
+				fout.write( (char*) &size, sizeof(int) );
+				for(int i=0;i<sv.size();i++){
+						fout.write( (char*) &(sv[i].first), sizeof(int));
+						fout.write( (char*) &(sv[i].second), sizeof(Float));
+				}
+				
+				return fout;
+}
+
+ifstream& operator>>(ifstream& fin, SparseVec& sv){
+				
+				int size;
+				fin.read( (char*) &size, sizeof(int) );
+				sv.resize(size);
+				for(int i=0;i<size;i++){
+						fin.read( (char*) &(sv[i].first), sizeof(int) );
+						fin.read( (char*) &(sv[i].second), sizeof(Float));
+				}
+
+				return fin;
+}
+
+
 #define EPS 1e-12
 #define INFI 1e10
 #define PermutationHash HashFunc
@@ -57,6 +83,14 @@ class ScoreCompAsc{
 	}
 	private:
 	Float* score;
+};
+
+class ValueComp{
+	
+	public:
+	bool operator()(const pair<int,Float>& p1, const pair<int,Float>& p2){
+		return p1.second > p2.second;
+	}
 };
 
 typedef priority_queue<int,vector<int>,ScoreComp> PQueue;
@@ -102,7 +136,7 @@ vector<string> split(string str, string pattern){
 	return str_split;
 }
 
-double inner_prod(double* w, SparseVec* sv){
+Float inner_prod(Float* w, SparseVec* sv){
 
 	double sum = 0.0;
 	for(SparseVec::iterator it=sv->begin(); it!=sv->end(); it++){
@@ -121,7 +155,8 @@ double prox_l1_nneg( double v, double lambda ){
 
 inline Float prox_l1( Float v, Float lambda ){
 	
-	if( fabs(v) > lambda ){
+	double v_abs = fabs(v);
+	if( v_abs > lambda ){//dismec heuristic
 		if( v>0.0 )
 			return v - lambda;
 		else 
@@ -213,6 +248,18 @@ void size_to_displacement(int* size_arr, int len, int* disp_arr){
 	disp_arr[0] = 0;
 	for(int i=1;i<len;i++)
 		disp_arr[i] = disp_arr[i-1] + size_arr[i-1];
+}
+
+void size_to_displacement(long* size_arr, int len, long* disp_arr){
+	
+	disp_arr[0] = 0;
+	for(int i=1;i<len;i++)
+		disp_arr[i] = disp_arr[i-1] + size_arr[i-1];
+}
+
+string pathToFname(char* path){
+			string path_str(path);
+			return path_str.substr(path_str.find_last_of("/") + 1);
 }
 
 
@@ -350,5 +397,7 @@ inline void solve_bi_simplex(int n, int m, Float* b, Float* c, Float C, Float* x
 	delete[] index_b; delete[] index_c;
 	delete[] D_b; delete[] D_c;
 }
+
+
 
 #endif

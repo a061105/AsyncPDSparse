@@ -182,10 +182,128 @@ class StaticModel{
 				fout << it->first << ":" << it->second << " ";
 			}
 			fout << endl;
+
+			if( j % (D/100) == 0 )
+							cerr << "." ;
 		}
+		cerr << endl;
 		fout.close();
 	}
 };
+
+
+class ThreadModelWriter{
+	
+				public:
+				ThreadModelWriter(int _nNode, int _nThread, int node_id, int thread_id, Param* _param){
+						
+						nNode = _nNode;
+						nThread = _nThread;
+						param = _param;
+						
+						model_dir_name = new char[FNAME_LEN];
+						sprintf(model_dir_name, "model_dir.%s", param->modelFname);
+						
+						char tmp[FNAME_LEN];
+						sprintf(tmp, "mkdir -p %s", model_dir_name);
+						system(tmp);
+						
+						modelFname = new char[FNAME_LEN];
+						sprintf(modelFname, "%s/model.%d", model_dir_name, node_id*nThread+thread_id);
+						modelFout = new ofstream(modelFname);
+				}
+				
+				ThreadModelWriter(int _nNode, int _nThread, Param* _param){
+							
+						nNode = _nNode;
+						nThread = _nThread;
+						param = _param;
+						
+						model_dir_name = new char[FNAME_LEN];
+						sprintf(model_dir_name, "model_dir.%s", param->modelFname);
+						char tmp[FNAME_LEN];
+						sprintf(tmp, "mkdir -p %s", model_dir_name);
+						system(tmp);
+						
+						modelFname = param->modelFname;
+						modelFout = NULL;
+				}
+				
+				void mergeModel(){
+						
+						int D = param->train->D;
+						vector<SparseVec> W;
+						W.resize(D);
+						for(int i=0;i<nNode*nThread;i++){
+										char tmp[FNAME_LEN];
+										sprintf(tmp, "%s/model.%d", model_dir_name, i);
+										ifstream fin(tmp);
+										
+										while( !fin.eof() ){
+												int class_id;
+												fin.read( (char*)&class_id, sizeof(int) );
+												if( fin.eof() )
+																break;
+												SparseVec sv;
+												fin >> sv;
+												cerr << "sv size=" << sv.size() << endl;
+												for(SparseVec::iterator it=sv.begin(); it!=sv.end(); it++)
+																W[it->first].push_back(make_pair(class_id, it->second));
+										}
+						}
+						cerr << "modelFname=" << modelFname << endl;
+						ofstream fout(modelFname);
+						fout << "nr_class " << param->train->K << endl;
+						fout << "label ";
+						vector<string>& label_name_list = param->train->label_name_list;
+						for(vector<string>::iterator it=label_name_list.begin();
+														it!=label_name_list.end(); it++){
+										fout << *it << " ";
+						}
+						fout << endl;
+						fout << "nr_feature " << param->train->D << endl;
+						
+						for(int j=0;j<D;j++){
+
+								fout << W[j].size() << " ";
+								for(SparseVec::iterator it=W[j].begin(); it!=W[j].end(); it++)
+												fout << it->first << ":" << it->second << " ";
+								fout << endl;
+						}
+						fout.close();
+						
+						char tmp[FNAME_LEN];
+						sprintf(tmp, "rm -rf model_dir.%s", param->modelFname);
+						system(tmp);
+				}
+
+				void writeVec(int class_id, SparseVec& sv){
+							
+							(*modelFout).write( (char*) &class_id, sizeof(int) );
+							(*modelFout) << sv;
+				}
+				
+				void close(){
+							
+							(*modelFout).close();
+				}
+				
+				~ThreadModelWriter(){
+						delete[] model_dir_name;
+						delete[] modelFname;
+						if( modelFout != NULL )
+										delete modelFout;
+				}
+
+				private:
+				int nNode;
+				int nThread;
+				char* model_dir_name;
+				char* modelFname;
+				ofstream* modelFout;
+				Param* param;
+};
+
 
 void readData(char* fname, Problem* prob, bool add_bias)
 {

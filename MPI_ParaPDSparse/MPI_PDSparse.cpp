@@ -259,19 +259,19 @@ int main(int argc, char** argv){
 		cerr << "writing model..." << endl;
 	}
 	
-	int nnz_wkj = 0;
+	long nnz_wkj = 0;
 	for(int r=0;r<labels_assigned.size();r++)
-		nnz_wkj += wk_arr[r].size();
-	int* nnz_wkj_arr = NULL;
+		nnz_wkj += (long)wk_arr[r].size();
+	long* nnz_wkj_arr = NULL;
 	if( mpi_rank==ROOT )
-		nnz_wkj_arr = new int[mpi_num_proc];
+		nnz_wkj_arr = new long[mpi_num_proc];
 	
-	MPI::COMM_WORLD.Gather(&nnz_wkj,1,MPI::INT, nnz_wkj_arr,1, MPI::INT, ROOT);
+	MPI::COMM_WORLD.Gather(&nnz_wkj,1,MPI::LONG, nnz_wkj_arr,1, MPI::LONG, ROOT);
 	
-	int* disp = NULL;
-	int total_nnz = 0;
+	long* disp = NULL;
+	long total_nnz = 0;
 	if( mpi_rank==ROOT){
-		disp = new int[mpi_num_proc];
+		disp = new long[mpi_num_proc];
 		size_to_displacement(nnz_wkj_arr, mpi_num_proc, disp);
 		total_nnz = disp[mpi_num_proc-1] + nnz_wkj_arr[mpi_num_proc-1];
 	}
@@ -279,7 +279,7 @@ int main(int argc, char** argv){
 	int* k_arr = new int[nnz_wkj];
 	int* j_arr = new int[nnz_wkj];
 	Float* v_arr = new Float[nnz_wkj];
-	int count=0;
+	long count=0;
 	for(int r=0;r<labels_assigned.size();r++){
 		int k = labels_assigned[r];
 		for(SparseVec::iterator it=wk_arr[r].begin(); it!=wk_arr[r].end(); it++){
