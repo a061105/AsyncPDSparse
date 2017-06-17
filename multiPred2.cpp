@@ -15,7 +15,8 @@ int main(int argc, char** argv){
 				char* modelFile = argv[2];
 				char* outFname;
 
-				StaticModel* model = readModel(modelFile);
+				bool is_binary = !isFile(modelFile);
+				StaticModel* model = readModel(modelFile, is_binary);
 
 				Problem* prob = new Problem();
 				readData( testFile, prob, true );

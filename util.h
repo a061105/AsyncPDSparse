@@ -17,6 +17,9 @@
 #include<cassert>
 #include<limits.h>
 #include<queue>
+#include <sys/types.h>
+#include <dirent.h>
+#include <errno.h>
 
 using namespace std;
 
@@ -28,6 +31,26 @@ const int LINE_LEN = 100000000;
 const int FNAME_LEN = 1000;
 const int INF = INT_MAX;
 const int RESERVE_SIZE = 1000;
+
+
+int isFile(const char* name)
+{
+				DIR* directory = opendir(name);
+
+				if(directory != NULL)
+				{
+								closedir(directory);
+								return 0;
+				}
+
+				if(errno == ENOTDIR)
+				{
+								return 1;
+				}
+
+				return -1;
+}
+
 
 ofstream& operator<<(ofstream& fout, SparseVec& sv){
 		

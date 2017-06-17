@@ -25,7 +25,8 @@ int main(int argc, char** argv){
 				if (argc > 3 + offset){
 								T = atoi(argv[3 + offset]);
 				}
-				StaticModel* model = readModel(modelFile);
+				bool is_binary = !isFile(modelFile);
+				StaticModel* model = readModel(modelFile, is_binary);
 
 				if (T > model->K || S > model->K){
 								cerr << "k or S is larger than domain size" << endl;

@@ -136,7 +136,7 @@ class ParallelPDSparse{
 										y_arr[t][*it] = 1.0;
 
 						//if( 10*pos_samples.size() < N ){
-						active_set_CD( k, pos_samples, 
+											active_set_CD( k, pos_samples, 
 													prod_arr[t], alpha_arr[t], y_arr[t], w_arr[t], w_nz_arr[t], v_arr[t],
 														w_k );
 						//}else{
@@ -255,10 +255,10 @@ class ParallelPDSparse{
 			v_change_ind.reserve(RESERVE_SIZE);
 			prod_change_ind.reserve(RESERVE_SIZE);
 			Float tol = 0.1;
-			int max_iter = 15;
+			int max_iter = 30;
 			int max_inner = 1;
-			double sample_speedup_rate = 10.0;
-			int minimal_sample_size = 5;
+			double sample_speedup_rate = 20.0;
+			int minimal_sample_size = 10;
 			//int minimal_sample_size = 1000000000;
 			int max_select = 100;
 			SparseVec wk_samples;
@@ -369,6 +369,7 @@ class ParallelPDSparse{
 					Float wj = it->second;
 					
 					int x_sample_size = max_select*10;
+					//int x_sample_size = 100000000;
 					if( data_inv[j].size() <= x_sample_size ){
 									for(SparseVec::iterator it2=data_inv[j].begin(); 
 																	it2!=data_inv[j].end(); it2++){
@@ -381,7 +382,7 @@ class ParallelPDSparse{
 													prod[i] += wj*xji;
 									}
 					}else{
-									//if( wj > 0.0 ){
+									if( wj > 0.0 ){
 													//int ran = rand() % (data_inv[j].size()-x_sample_size+1);
 													//double ratio = (double)data_inv[j].size()/x_sample_size;
 													//for(int r=ran;r<ran+x_sample_size;r++){
@@ -395,7 +396,7 @@ class ParallelPDSparse{
 																	}
 																	prod[i] += wj*xji;
 													}
-									/*}else{
+									}else{
 													for(int r=0;r<x_sample_size;r++){
 																	int r2 = data_inv[j].size()-1-r;
 																	int i = data_inv[j][r2].first;
@@ -408,7 +409,7 @@ class ParallelPDSparse{
 																	prod[i] += wj*xji;
 													}
 
-									}*/
+									}
 					}
 				}
 				prod_time += omp_get_wtime();
@@ -497,7 +498,7 @@ class ParallelPDSparse{
 			for(vector<int>::iterator it=v_change_ind.begin(); it!=v_change_ind.end(); it++){
 				int j = *it;
 				v[j] = 0.0;
-				if( fabs(w[j]) > 1e-6 )//dismec heuristic
+				if( fabs(w[j]) > 1e-2 )//dismec heuristic
 					w_k.push_back(make_pair(j,w[j]));
 				w[j] = 0.0;
 			}

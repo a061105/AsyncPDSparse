@@ -17,7 +17,9 @@ int main(int argc, char** argv){
 				omp_set_num_threads(num_thread);
 				
 				char* outFname;
-				StaticModel* model = readModel(modelFile);
+				bool is_binary = !isFile(modelFile);
+				cerr << "is_binary=" << is_binary << endl;
+				StaticModel* model = readModel(modelFile, is_binary);
 				
 				Problem* prob = new Problem();
 				readData( testFile, prob, true );

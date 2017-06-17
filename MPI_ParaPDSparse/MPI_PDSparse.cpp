@@ -24,7 +24,7 @@ void exit_with_help(){
 	exit(0);
 }
 
-int batch_size = 100;
+int batch_size = 10;
 
 void parse_cmd_line(int argc, char** argv, Param* param){
 
@@ -38,6 +38,7 @@ void parse_cmd_line(int argc, char** argv, Param* param){
 		switch(argv[i-1][1]){
 			
 			case 'l': param->lambda = atof(argv[i]);
+								//param->lambda = 0.0;
 				  break;
 			case 'c': param->C = atof(argv[i]);
 				  break;
@@ -114,7 +115,7 @@ void label_freq_sort(vector<Labels>& labels, int N, int K, vector<pair<int,int> 
 	delete[] freq;
 }
 
-const int ROOT = 0;
+const int ROOT = 0;//cannto change to other number
 const int TAG = 0;
 
 int main(int argc, char** argv){
@@ -122,6 +123,8 @@ int main(int argc, char** argv){
 	MPI::Init_thread(argc,argv,MPI_THREAD_MULTIPLE);
 	int mpi_rank = MPI::COMM_WORLD.Get_rank();
 	int mpi_num_proc = MPI::COMM_WORLD.Get_size();
+	int num_worker_node = mpi_num_proc-1;
+	int worker_node_id = mpi_rank-1;//assuming rank=0 is the ROOT
 	
 	Param* param = new Param();
 	parse_cmd_line(argc, argv, param);
@@ -129,7 +132,7 @@ int main(int argc, char** argv){
 	Problem* train = new Problem();
 	readData( param->trainFname, train, true);
 	param->train = train;
-
+	
 	int D = train->D;
 	int K = train->K;
 	int N = train->data.size();
@@ -138,13 +141,10 @@ int main(int argc, char** argv){
 		cerr << "d=" << (Float)nnz(train->data)/N << endl;
 		cerr << "D=" << D << endl; 
 		cerr << "K=" << K << endl;
+		ThreadModelWriter root_modelwriter(num_worker_node, param->num_threads, param);
+		root_modelwriter.writeMeta();
 	}
 
-	//worker results will be merged into these two structures
-	vector<int> labels_assigned;
-	vector<SparseVec> wk_arr;
-	//////////////////////////////////////////
-	
 	Float overall_train_time = 0.0;
 	if( mpi_rank == ROOT ){
 		/////coordinator code
@@ -154,7 +154,8 @@ int main(int argc, char** argv){
 		vector<pair<int,int> > label_freq;
 		label_freq_sort( train->labels, N, K, label_freq );
 		
-		int r=0;
+		//int r=309790; //debug from 293600
+		int r=0; //debug from 293600
 		int* send_buf = new int[batch_size];
 		int req_rank;
 		while( r < label_freq.size() ){
@@ -171,10 +172,10 @@ int main(int argc, char** argv){
 			
 			MPI::COMM_WORLD.Recv( &req_rank, 1, MPI::INT, MPI::ANY_SOURCE, TAG);
 			MPI::COMM_WORLD.Send( send_buf, batch_size, MPI::INT, req_rank, TAG);
-
+			
 			cerr << "#labels_solved=" << r << endl;
 		}
-
+		
 		for(int i=0;i<batch_size;i++)
 			send_buf[i] = -1;
 
@@ -204,6 +205,11 @@ int main(int argc, char** argv){
 		int* offset_arr = new int[nthreads];
 		for(int i=0;i<nthreads;i++)
 						offset_arr[i] = 0;
+
+		vector<ThreadModelWriter*> modelwriter_vec;
+		modelwriter_vec.resize(nthreads);
+		for(int i=0;i<nthreads;i++)
+						modelwriter_vec[i] = new ThreadModelWriter(num_worker_node, nthreads, worker_node_id, i, param);
 		/////////////////////
 		
 		#pragma omp parallel
@@ -215,9 +221,12 @@ int main(int argc, char** argv){
 			vector<SparseVec>& wk_arr = wk_arr_arr[t];
 			int* recv_buf = recv_buf_arr[t];
 			vector<int>& label_batch = label_batch_arr[t];
-
+			ThreadModelWriter* modelwriter = modelwriter_vec[t];
+			
 			MPI::COMM_WORLD.Sendrecv(&mpi_rank,1,MPI::INT, ROOT, TAG,
 					recv_buf, batch_size, MPI::INT, ROOT, TAG);
+			
+			//cerr << "r=" << mpi_rank << ", t=" << t << ", get new labels" << endl;
 			int i;
 			label_batch.clear();
 			for(i=0;i<batch_size && recv_buf[i]!=-1;i++){
@@ -228,96 +237,38 @@ int main(int argc, char** argv){
 			}
 			
 			if( i==0 ){ //not receiving any new label==> terminate
+					
+					modelwriter->close();
+					delete modelwriter;
+					
 					cerr << "rank=" << mpi_rank << ", thread=" << t << ", done." << endl;
 					break;
 			}
+
 			
 			for(int r=0;r<label_batch.size();r++){
 				int k = label_batch[r];
 				vector<int>& pos_sample = solver->pos_samples[k];
+				//solve class k
+				//cerr << "r=" << mpi_rank << ", t=" << t << ", solve..." << endl;
 				solver->solve_one_class(k, pos_sample, wk_arr[offset_arr[t]+r]);
+				//cerr << "r=" << mpi_rank << ", t=" << t << ", solved" << endl;
+				//write model
+				modelwriter->writeVec(k, wk_arr[offset_arr[t]+r]);
+				//cerr << "r=" << mpi_rank << ", t=" << t <<", model written" << endl;
 			}
-			
+
 			offset_arr[t] += label_batch.size();
 		}
-		
-
-		//merge results of each thread
-		for(int t=0;t<nthreads;t++){
-						for(int i=0;i<labels_assigned_arr[t].size();i++)
-										labels_assigned.push_back(labels_assigned_arr[t][i]);
-						for(int i=0;i<wk_arr_arr[t].size();i++)
-										wk_arr.push_back(wk_arr_arr[t][i]);
-		}
 	}
-
-	//Gather wk, k=1...K, from processes
 	MPI::COMM_WORLD.Barrier();
+
+	
 	if( mpi_rank==0 ){
 		
 		cerr << "overall train time=" << overall_train_time << endl;
-		cerr << "writing model..." << endl;
+		//cerr << "writing model..." << endl;
 	}
-	
-	long nnz_wkj = 0;
-	for(int r=0;r<labels_assigned.size();r++)
-		nnz_wkj += (long)wk_arr[r].size();
-	long* nnz_wkj_arr = NULL;
-	if( mpi_rank==ROOT )
-		nnz_wkj_arr = new long[mpi_num_proc];
-	
-	MPI::COMM_WORLD.Gather(&nnz_wkj,1,MPI::LONG, nnz_wkj_arr,1, MPI::LONG, ROOT);
-	
-	long* disp = NULL;
-	long total_nnz = 0;
-	if( mpi_rank==ROOT){
-		disp = new long[mpi_num_proc];
-		size_to_displacement(nnz_wkj_arr, mpi_num_proc, disp);
-		total_nnz = disp[mpi_num_proc-1] + nnz_wkj_arr[mpi_num_proc-1];
-	}
-	
-	int* k_arr = new int[nnz_wkj];
-	int* j_arr = new int[nnz_wkj];
-	Float* v_arr = new Float[nnz_wkj];
-	long count=0;
-	for(int r=0;r<labels_assigned.size();r++){
-		int k = labels_assigned[r];
-		for(SparseVec::iterator it=wk_arr[r].begin(); it!=wk_arr[r].end(); it++){
-			int j = it->first;
-			Float val = it->second;
-			k_arr[count] = k;
-			j_arr[count] = j;
-			v_arr[count] = val;
-			count++;
-		}
-	}
-	
-	int* k_merge = NULL;
-	int* j_merge = NULL;
-	Float* v_merge = NULL;
-	if( mpi_rank == ROOT ){
-		k_merge = new int[total_nnz];
-		j_merge = new int[total_nnz];
-		v_merge = new Float[total_nnz];
-	}
-	
-	MPI::COMM_WORLD.Gatherv( k_arr, nnz_wkj, MPI::INT, k_merge, nnz_wkj_arr, disp, MPI::INT, ROOT);
-	MPI::COMM_WORLD.Gatherv( j_arr, nnz_wkj, MPI::INT, j_merge, nnz_wkj_arr, disp, MPI::INT, ROOT);
-	MPI::COMM_WORLD.Gatherv( v_arr, nnz_wkj, MPI::DOUBLE, v_merge, nnz_wkj_arr, disp, MPI::DOUBLE, ROOT);
-	
-	// Construct Model from k_arr, j_arr, v_arr
-	if( mpi_rank==ROOT ){
-		StaticModel* model = new StaticModel(train);
-		SparseVec* w = model->w;
-		for(int i=0;i<total_nnz;i++){
-			int k = k_merge[i];
-			int j = j_merge[i];
-			Float v = v_merge[i];
-			w[j].push_back(make_pair(k,v));
-		}
-		model->writeModel(param->modelFname);
-	}
-
 	
 	MPI::Finalize();
 }

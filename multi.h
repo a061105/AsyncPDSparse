@@ -225,10 +225,36 @@ class ThreadModelWriter{
 						sprintf(tmp, "mkdir -p %s", model_dir_name);
 						system(tmp);
 						
-						modelFname = param->modelFname;
+						modelFname = new char[FNAME_LEN];
+						sprintf(modelFname, "%s/meta", model_dir_name);
+						
 						modelFout = NULL;
 				}
 				
+				~ThreadModelWriter(){
+						delete[] model_dir_name;
+						delete[] modelFname;
+						if( modelFout != NULL )
+										delete modelFout;
+				}
+				
+				void writeMeta(){
+
+						ofstream fout(modelFname);
+						fout << "nr_class " << param->train->K << endl;
+						fout << "label ";
+						vector<string>& label_name_list = param->train->label_name_list;
+						for(vector<string>::iterator it=label_name_list.begin();
+														it!=label_name_list.end(); it++){
+										fout << *it << " ";
+						}
+						fout << endl;
+						fout << "nr_feature " << param->train->D << endl;
+						fout << "num_files " << nNode*nThread << endl;
+						
+						fout.close();
+				}
+
 				void mergeModel(){
 						
 						int D = param->train->D;
@@ -246,12 +272,13 @@ class ThreadModelWriter{
 																break;
 												SparseVec sv;
 												fin >> sv;
-												cerr << "sv size=" << sv.size() << endl;
 												for(SparseVec::iterator it=sv.begin(); it!=sv.end(); it++)
 																W[it->first].push_back(make_pair(class_id, it->second));
 										}
 						}
-						cerr << "modelFname=" << modelFname << endl;
+						
+						cerr << "output model file: " << modelFname << endl;
+						
 						ofstream fout(modelFname);
 						fout << "nr_class " << param->train->K << endl;
 						fout << "label ";
@@ -269,7 +296,11 @@ class ThreadModelWriter{
 								for(SparseVec::iterator it=W[j].begin(); it!=W[j].end(); it++)
 												fout << it->first << ":" << it->second << " ";
 								fout << endl;
+
+								if( j % (D/100) == 0 )
+												cerr << "." ;
 						}
+						cerr << endl;
 						fout.close();
 						
 						char tmp[FNAME_LEN];
@@ -288,12 +319,6 @@ class ThreadModelWriter{
 							(*modelFout).close();
 				}
 				
-				~ThreadModelWriter(){
-						delete[] model_dir_name;
-						delete[] modelFname;
-						if( modelFout != NULL )
-										delete modelFout;
-				}
 
 				private:
 				int nNode;
@@ -413,40 +438,87 @@ void readData(char* fname, Problem* prob, bool add_bias)
 	delete[] line;
 }
 
-StaticModel* readModel(char* file){
+StaticModel* readModel(char* file, bool is_binary){
 
 				StaticModel* model = new StaticModel();
-
-				ifstream fin(file);
-				char* tmp = new char[LINE_LEN];
-				fin >> tmp >> (model->K);
 				
-				fin >> tmp;
-				string name;
-				for(int k=0;k<model->K;k++){
-								fin >> name;
-								model->label_name_list->push_back(name);
-								model->label_index_map->insert(make_pair(name,k));
-				}
+				char* tmp = new char[LINE_LEN];
+				
+				if( !is_binary ){
+								
+								ifstream fin(file);
+								fin >> tmp >> (model->K);
 
-				fin >> tmp >> (model->D);
-				model->w = new SparseVec[model->D];
+								fin >> tmp;
+								string name;
+								for(int k=0;k<model->K;k++){
+												fin >> name;
+												model->label_name_list->push_back(name);
+												model->label_index_map->insert(make_pair(name,k));
+								}
 
-				vector<string> ind_val;
-				int nnz_j;
-				for(int j=0;j<model->D;j++){
-								fin >> nnz_j;
-								model->w[j].resize(nnz_j);
-								for(int r=0;r<nnz_j;r++){
-												fin >> tmp;
-												ind_val = split(tmp,":");
-												int k = atoi(ind_val[0].c_str());
-												Float val = atof(ind_val[1].c_str());
-												model->w[j][r].first = k;
-												model->w[j][r].second = val;
+								fin >> tmp >> (model->D);
+								model->w = new SparseVec[model->D];
+
+								vector<string> ind_val;
+								int nnz_j;
+								for(int j=0;j<model->D;j++){
+												if( j % (model->D/100) == 0 )
+																cerr << ".";
+												fin >> nnz_j;
+												model->w[j].resize(nnz_j);
+												for(int r=0;r<nnz_j;r++){
+																fin >> tmp;
+																ind_val = split(tmp,":");
+																int k = atoi(ind_val[0].c_str());
+																Float val = atof(ind_val[1].c_str());
+																model->w[j][r].first = k;
+																model->w[j][r].second = val;
+												}
+								}
+								cerr << endl;
+				}else{
+								//read meta
+								sprintf(tmp, "%s/meta", file);
+								
+								ifstream fin(tmp);
+								fin >> tmp >> (model->K);
+								fin >> tmp;
+								string name;
+								for(int k=0;k<model->K;k++){
+												fin >> name;
+												model->label_name_list->push_back(name);
+												model->label_index_map->insert(make_pair(name,k));
+								}
+								fin >> tmp >> (model->D);
+								model->w = new SparseVec[model->D];
+								SparseVec* W = model->w;
+
+								int num_model_files;
+								fin >> tmp >> num_model_files;
+								cerr << "num_model_files=" << num_model_files << endl;
+								fin.close();
+								
+								//read models
+								for(int i=0;i<num_model_files;i++){
+										
+										sprintf(tmp, "%s/model.%d", file, i);
+										ifstream fin(tmp);
+										
+										while( !fin.eof() ){
+												int class_id;
+												fin.read( (char*)&class_id, sizeof(int) );
+												if( fin.eof() )
+																break;
+												SparseVec sv;
+												fin >> sv;
+												for(SparseVec::iterator it=sv.begin(); it!=sv.end(); it++)
+																W[it->first].push_back(make_pair(class_id, it->second));
+										}
+										fin.close();
 								}
 				}
-
+				
 				delete[] tmp;
 				return model;
 }
