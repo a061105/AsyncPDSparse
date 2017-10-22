@@ -1,4 +1,4 @@
-all: clean multiTrain multiPred2 multiPred3
+all: clean multiTrain multiPred3
 
 #.PHONY: multiTrain
 
